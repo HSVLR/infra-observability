@@ -14,15 +14,15 @@ Ports that Docker publishes with `ports:` are opened directly in iptables (the `
 **ufw rules do not apply to them.** Therefore:
 
 1. Bind published ports to the **private IP** in `.env`:
-   - `agent/.env`: `CADVISOR_BIND=10.0.0.11`
-   - `monitoring-server/.env`: `REST_SERVER_BIND=10.0.0.13`, and `GRAFANA_BIND` if needed
+   - `agent/.env`: `CADVISOR_BIND=46.62.220.45`
+   - `monitoring-server/.env`: `REST_SERVER_BIND=77.42.20.237`, and `GRAFANA_BIND` if needed
 2. Restrict the allowed sources in the `DOCKER-USER` chain. Each `-I DOCKER-USER 1` inserts at the top,
    so add the DROP rule first and the allow (`RETURN`) rules after it.
 
 On vm1 and vm2, allow cAdvisor from vm3 only:
 
 ```bash
-sudo iptables -I DOCKER-USER 1 -p tcp -m conntrack --ctdir ORIGINAL --ctorigdstport 9338 ! -s 10.0.0.13 -j DROP
+sudo iptables -I DOCKER-USER 1 -p tcp -m conntrack --ctdir ORIGINAL --ctorigdstport 9338 ! -s 77.42.20.237 -j DROP
 ```
 
 On vm3, allow rest-server from vm1 and vm2 only, and cAdvisor from the local Prometheus container only:
@@ -30,8 +30,8 @@ On vm3, allow rest-server from vm1 and vm2 only, and cAdvisor from the local Pro
 ```bash
 M="-p tcp -m conntrack --ctdir ORIGINAL --ctorigdstport"
 sudo iptables -I DOCKER-USER 1 $M 8000 -j DROP
-sudo iptables -I DOCKER-USER 1 $M 8000 -s 10.0.0.12 -j RETURN
-sudo iptables -I DOCKER-USER 1 $M 8000 -s 10.0.0.11 -j RETURN
+sudo iptables -I DOCKER-USER 1 $M 8000 -s 95.216.190.53 -j RETURN
+sudo iptables -I DOCKER-USER 1 $M 8000 -s 46.62.220.45 -j RETURN
 sudo iptables -I DOCKER-USER 1 $M 9338 ! -s 172.16.0.0/12 -j DROP
 ```
 
@@ -40,7 +40,7 @@ Make the rules persistent, for example with `iptables-persistent` (`sudo netfilt
 node-exporter runs with `network_mode: host`, so normal ufw rules apply to it:
 
 ```bash
-sudo ufw allow from 10.0.0.13 to any port 9100 proto tcp
+sudo ufw allow from 77.42.20.237 to any port 9100 proto tcp
 ```
 
 On vm3, Prometheus runs inside a Docker network and scrapes vm3's own node-exporter through vm3's private IP.
@@ -60,7 +60,7 @@ To use TLS with a self-signed certificate:
 cd monitoring-server/rest-server
 openssl req -x509 -newkey rsa:4096 -sha256 -days 3650 -nodes \
   -keyout tls.key -out tls.crt -subj "/CN=vm3" \
-  -addext "subjectAltName=IP:10.0.0.13"
+  -addext "subjectAltName=IP:77.42.20.237"
 
 # monitoring-server/.env
 REST_SERVER_EXTRA_OPTIONS=--tls --tls-cert /etc/rest-server/tls.crt --tls-key /etc/rest-server/tls.key
@@ -75,6 +75,6 @@ On vm1 and vm2:
 3. Update `agent/.env`:
 
 ```
-RESTIC_REPOSITORY=rest:https://vm1:...@10.0.0.13:8000/vm1/
+RESTIC_REPOSITORY=rest:https://vm1:...@77.42.20.237:8000/vm1/
 RESTIC_CACERT=/etc/backup/rest-server.crt
 ```

@@ -10,9 +10,9 @@ Throughout this guide:
 
 | VM | Role | Private IP (example) |
 |---|---|---|
-| vm1 | application VM | `10.0.0.11` |
-| vm2 | application VM | `10.0.0.12` |
-| vm3 | monitoring + backup server | `10.0.0.13` |
+| vm1 | application VM | `46.62.220.45` |
+| vm2 | application VM | `95.216.190.53` |
+| vm3 | monitoring + backup server | `77.42.20.237` |
 
 Replace these IPs with your real ones everywhere.
 
@@ -112,7 +112,7 @@ Keep the `host` labels (`vm1`, `vm2`, `vm3`). The dashboards and alerts depend o
 Example `http.yml`, if your API on vm1 has a health endpoint:
 
 ```yaml
-- targets: ["http://10.0.0.11:8080/health"]
+- targets: ["http://46.62.220.45:8080/health"]
   labels: { host: vm1, service: api }
 ```
 
@@ -129,9 +129,9 @@ Set at least the following:
 | Variable | Value |
 |---|---|
 | `GRAFANA_ADMIN_PASSWORD` | a strong password (`openssl rand -base64 18`) |
-| `GRAFANA_ROOT_URL` | `http://10.0.0.13:3000` (or your DNS name) |
+| `GRAFANA_ROOT_URL` | `http://77.42.20.237:3000` (or your DNS name) |
 | `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID` | see [alerting.md](alerting.md#telegram) |
-| `REST_SERVER_BIND` | `10.0.0.13` (vm3's private IP; see [firewall.md](firewall.md)) |
+| `REST_SERVER_BIND` | `77.42.20.237` (vm3's private IP; see [firewall.md](firewall.md)) |
 | `RESTIC_DATA_HOST_DIR` | `/srv/restic` unless you changed it in step 2 |
 | `RESTORE_TESTS` | which dumps the monthly restore test checks (see below) |
 | `RESTORE_PG_IMAGE`, `RESTORE_MONGO_IMAGE` | the same major versions as production |
@@ -156,8 +156,8 @@ You can leave it at the example value now and correct it once you know the conta
 Run this once per VM that will send backups to vm3:
 
 ```bash
-scripts/add-restic-user.sh vm1 10.0.0.13
-scripts/add-restic-user.sh vm2 10.0.0.13
+scripts/add-restic-user.sh vm1 77.42.20.237
+scripts/add-restic-user.sh vm2 77.42.20.237
 ```
 
 Each run does three things:
@@ -166,7 +166,7 @@ Each run does three things:
 - prints two lines for that VM's `agent/.env`:
 
 ```
-RESTIC_REPOSITORY=rest:http://vm1:<http-password>@10.0.0.13:8000/vm1/
+RESTIC_REPOSITORY=rest:http://vm1:<http-password>@77.42.20.237:8000/vm1/
 RESTIC_PASSWORD=<repository-key>
 ```
 
@@ -214,7 +214,7 @@ Set:
 ```
 HOST_NAME=vm3
 COMPOSE_PROFILES=
-CADVISOR_BIND=10.0.0.13
+CADVISOR_BIND=77.42.20.237
 CRITICAL_CONTAINERS=prometheus,grafana,rest-server
 ```
 
@@ -249,8 +249,8 @@ M="-p tcp -m conntrack --ctdir ORIGINAL --ctorigdstport"
 
 # rest-server: only vm1 and vm2
 sudo iptables -I DOCKER-USER 1 $M 8000 -j DROP
-sudo iptables -I DOCKER-USER 1 $M 8000 -s 10.0.0.12 -j RETURN
-sudo iptables -I DOCKER-USER 1 $M 8000 -s 10.0.0.11 -j RETURN
+sudo iptables -I DOCKER-USER 1 $M 8000 -s 95.216.190.53 -j RETURN
+sudo iptables -I DOCKER-USER 1 $M 8000 -s 46.62.220.45 -j RETURN
 
 # cAdvisor on vm3: only the local Prometheus container (Docker networks)
 sudo iptables -I DOCKER-USER 1 $M 9338 ! -s 172.16.0.0/12 -j DROP
@@ -270,7 +270,7 @@ Run these checks on vm3.
 curl -s http://127.0.0.1:3000/api/health      # "database": "ok"
 ```
 
-Open `http://10.0.0.13:3000` and log in with `GRAFANA_ADMIN_USER` / `GRAFANA_ADMIN_PASSWORD`. Then check:
+Open `http://77.42.20.237:3000` and log in with `GRAFANA_ADMIN_USER` / `GRAFANA_ADMIN_PASSWORD`. Then check:
 - *Connections → Data sources → Prometheus → Test* shows a success message
 - *Dashboards → Infrastructure* contains **VM Overview**, **Docker Containers** and **Backups**
 - *Alerting → Alert rules* lists the groups `vm`, `containers` and `backups`
@@ -337,7 +337,7 @@ vim agent/.env
 |---|---|
 | `HOST_NAME` | `vm1` (same as the repository name from step 7) |
 | `COMPOSE_PROFILES` | `backup` |
-| `CADVISOR_BIND` | `10.0.0.11` |
+| `CADVISOR_BIND` | `46.62.220.45` |
 | `CRITICAL_CONTAINERS` | the important containers on this VM |
 | `RESTIC_REPOSITORY`, `RESTIC_PASSWORD` | output of step 7 for this VM |
 | `PG_CONTAINERS` | postgres container names on this VM, or empty |
@@ -348,8 +348,8 @@ vim agent/.env
 Then start the stack and run the first backups:
 
 ```bash
-sudo ufw allow from 10.0.0.13 to any port 9100 proto tcp
-sudo iptables -I DOCKER-USER -p tcp -m conntrack --ctorigdstport 9338 --ctdir ORIGINAL ! -s 10.0.0.13 -j DROP
+sudo ufw allow from 77.42.20.237 to any port 9100 proto tcp
+sudo iptables -I DOCKER-USER -p tcp -m conntrack --ctorigdstport 9338 --ctdir ORIGINAL ! -s 77.42.20.237 -j DROP
 
 cd agent
 docker compose build

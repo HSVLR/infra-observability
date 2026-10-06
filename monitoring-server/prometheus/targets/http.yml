@@ -1,5 +1,5 @@
 # HTTP health endpoints of important services, probed from vm3 (expects 2xx).
 # Example:
-# - targets: ["http://10.0.0.11:8080/health"]
+# - targets: ["http://46.62.220.45:8080/health"]
 #   labels: { host: vm1, service: api }
 []

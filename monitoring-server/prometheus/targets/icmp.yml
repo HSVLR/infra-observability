@@ -1,5 +1,5 @@
 # Ping from vm3 — tells "VM is down" apart from "only the exporter is down".
-- targets: ["10.0.0.11"]
+- targets: ["46.62.220.45"]
   labels: { host: vm1 }
-- targets: ["10.0.0.12"]
+- targets: ["95.216.190.53"]
   labels: { host: vm2 }

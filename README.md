@@ -96,7 +96,7 @@ docs/                      setup guide, restore runbook, firewall, alerting
 **Step-by-step guide for vm3 (and connecting vm1/vm2): [docs/setup-vm3.md](docs/setup-vm3.md).** The short version follows.
 
 Prerequisites on all three VMs: Docker with Compose v2, and a clone of this repository (for example in `/opt/infra-observability`).
-The examples use the private IPs `10.0.0.11` (vm1), `10.0.0.12` (vm2) and `10.0.0.13` (vm3).
+The examples use the private IPs `46.62.220.45` (vm1), `95.216.190.53` (vm2) and `77.42.20.237` (vm3).
 
 ### 1. vm3: monitoring and backup server
 
@@ -110,8 +110,8 @@ cp monitoring-server/.env.example monitoring-server/.env
 vim monitoring-server/.env          # Grafana password, Telegram, REST_SERVER_BIND, RESTORE_TESTS
 
 # one rest-server user + repository key per VM that backs up
-scripts/add-restic-user.sh vm1 10.0.0.13
-scripts/add-restic-user.sh vm2 10.0.0.13
+scripts/add-restic-user.sh vm1 77.42.20.237
+scripts/add-restic-user.sh vm2 77.42.20.237
 # keep the printed RESTIC_REPOSITORY / RESTIC_PASSWORD for step 2,
 # and store RESTIC_PASSWORD outside the VMs (password manager).
 

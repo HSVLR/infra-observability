@@ -1,0 +1,406 @@
+# Grafana-managed alert rules (phase 1 of the monitoring design).
+# Generated layout: query A (instant PromQL) -> threshold C.
+# Templates use .Labels / .Values (not $labels) because provisioning files
+# expand $VARIABLES from the environment.
+apiVersion: 1
+groups:
+- orgId: 1
+  name: vm
+  folder: Infrastructure
+  interval: 1m
+  rules:
+  - uid: vm-cpu-high
+    title: CPU high
+    condition: C
+    data:
+    - refId: A
+      relativeTimeRange:
+        from: 600
+        to: 0
+      datasourceUid: prometheus
+      model:
+        refId: A
+        expr: 100 * (1 - avg by (host) (rate(node_cpu_seconds_total{mode="idle"}[5m])))
+        instant: true
+        range: false
+        intervalMs: 1000
+        maxDataPoints: 43200
+    - refId: C
+      datasourceUid: __expr__
+      model:
+        refId: C
+        type: threshold
+        expression: A
+        conditions:
+        - evaluator:
+            type: gt
+            params:
+            - 85
+    for: 10m
+    noDataState: OK
+    execErrState: Error
+    labels:
+      severity: warning
+    annotations:
+      summary: '{{ index .Labels "host" }}: CPU usage {{ printf "%.1f" .Values.A.Value }}%'
+      description: CPU usage above 85% for 10 minutes.
+  - uid: vm-memory-low
+    title: Memory low
+    condition: C
+    data:
+    - refId: A
+      relativeTimeRange:
+        from: 600
+        to: 0
+      datasourceUid: prometheus
+      model:
+        refId: A
+        expr: 100 * node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes
+        instant: true
+        range: false
+        intervalMs: 1000
+        maxDataPoints: 43200
+    - refId: C
+      datasourceUid: __expr__
+      model:
+        refId: C
+        type: threshold
+        expression: A
+        conditions:
+        - evaluator:
+            type: lt
+            params:
+            - 15
+    for: 10m
+    noDataState: OK
+    execErrState: Error
+    labels:
+      severity: warning
+    annotations:
+      summary: '{{ index .Labels "host" }}: only {{ printf "%.1f" .Values.A.Value }}% RAM available'
+      description: Available memory below 15% for 10 minutes.
+  - uid: vm-disk-warning
+    title: Disk almost full
+    condition: C
+    data:
+    - refId: A
+      relativeTimeRange:
+        from: 600
+        to: 0
+      datasourceUid: prometheus
+      model:
+        refId: A
+        expr: 100 * (1 - node_filesystem_avail_bytes{fstype!~"tmpfs|overlay|squashfs|ramfs|nsfs|autofs"} / node_filesystem_size_bytes{fstype!~"tmpfs|overlay|squashfs|ramfs|nsfs|autofs"})
+        instant: true
+        range: false
+        intervalMs: 1000
+        maxDataPoints: 43200
+    - refId: C
+      datasourceUid: __expr__
+      model:
+        refId: C
+        type: threshold
+        expression: A
+        conditions:
+        - evaluator:
+            type: gt
+            params:
+            - 80
+    for: 15m
+    noDataState: OK
+    execErrState: Error
+    labels:
+      severity: warning
+    annotations:
+      summary: '{{ index .Labels "host" }}: disk {{ index .Labels "mountpoint" }} {{ printf "%.1f" .Values.A.Value }}% used'
+      description: Disk usage above 80% for 15 minutes.
+  - uid: vm-disk-critical
+    title: Disk critical
+    condition: C
+    data:
+    - refId: A
+      relativeTimeRange:
+        from: 600
+        to: 0
+      datasourceUid: prometheus
+      model:
+        refId: A
+        expr: 100 * (1 - node_filesystem_avail_bytes{fstype!~"tmpfs|overlay|squashfs|ramfs|nsfs|autofs"} / node_filesystem_size_bytes{fstype!~"tmpfs|overlay|squashfs|ramfs|nsfs|autofs"})
+        instant: true
+        range: false
+        intervalMs: 1000
+        maxDataPoints: 43200
+    - refId: C
+      datasourceUid: __expr__
+      model:
+        refId: C
+        type: threshold
+        expression: A
+        conditions:
+        - evaluator:
+            type: gt
+            params:
+            - 90
+    for: 5m
+    noDataState: OK
+    execErrState: Error
+    labels:
+      severity: critical
+    annotations:
+      summary: '{{ index .Labels "host" }}: disk {{ index .Labels "mountpoint" }} {{ printf "%.1f" .Values.A.Value }}% used'
+      description: Disk usage above 90% for 5 minutes. Services may stop.
+  - uid: target-down
+    title: Target down
+    condition: C
+    data:
+    - refId: A
+      relativeTimeRange:
+        from: 600
+        to: 0
+      datasourceUid: prometheus
+      model:
+        refId: A
+        expr: up
+        instant: true
+        range: false
+        intervalMs: 1000
+        maxDataPoints: 43200
+    - refId: C
+      datasourceUid: __expr__
+      model:
+        refId: C
+        type: threshold
+        expression: A
+        conditions:
+        - evaluator:
+            type: lt
+            params:
+            - 1
+    for: 3m
+    noDataState: OK
+    execErrState: Error
+    labels:
+      severity: critical
+    annotations:
+      summary: '{{ index .Labels "host" }}: {{ index .Labels "job" }} target {{ index .Labels "instance" }} is down'
+      description: Prometheus could not scrape the target for 3 minutes (VM down, exporter stopped or firewall).
+  - uid: probe-failed
+    title: Probe failed
+    condition: C
+    data:
+    - refId: A
+      relativeTimeRange:
+        from: 600
+        to: 0
+      datasourceUid: prometheus
+      model:
+        refId: A
+        expr: probe_success
+        instant: true
+        range: false
+        intervalMs: 1000
+        maxDataPoints: 43200
+    - refId: C
+      datasourceUid: __expr__
+      model:
+        refId: C
+        type: threshold
+        expression: A
+        conditions:
+        - evaluator:
+            type: lt
+            params:
+            - 1
+    for: 3m
+    noDataState: OK
+    execErrState: Error
+    labels:
+      severity: critical
+    annotations:
+      summary: '{{ index .Labels "host" }}: probe {{ index .Labels "job" }} {{ index .Labels "instance" }} failing'
+      description: Blackbox probe from vm3 (ping / HTTP health endpoint) failing for 3 minutes.
+- orgId: 1
+  name: containers
+  folder: Infrastructure
+  interval: 1m
+  rules:
+  - uid: container-down
+    title: Container down
+    condition: C
+    data:
+    - refId: A
+      relativeTimeRange:
+        from: 600
+        to: 0
+      datasourceUid: prometheus
+      model:
+        refId: A
+        expr: docker_container_running{critical="true"}
+        instant: true
+        range: false
+        intervalMs: 1000
+        maxDataPoints: 43200
+    - refId: C
+      datasourceUid: __expr__
+      model:
+        refId: C
+        type: threshold
+        expression: A
+        conditions:
+        - evaluator:
+            type: lt
+            params:
+            - 1
+    for: 2m
+    noDataState: OK
+    execErrState: Error
+    labels:
+      severity: critical
+    annotations:
+      summary: '{{ index .Labels "host" }}: container {{ index .Labels "name" }} is not running'
+      description: A critical container (CRITICAL_CONTAINERS) is stopped or missing.
+  - uid: container-unhealthy
+    title: Container unhealthy
+    condition: C
+    data:
+    - refId: A
+      relativeTimeRange:
+        from: 600
+        to: 0
+      datasourceUid: prometheus
+      model:
+        refId: A
+        expr: docker_container_unhealthy{critical="true"}
+        instant: true
+        range: false
+        intervalMs: 1000
+        maxDataPoints: 43200
+    - refId: C
+      datasourceUid: __expr__
+      model:
+        refId: C
+        type: threshold
+        expression: A
+        conditions:
+        - evaluator:
+            type: gt
+            params:
+            - 0
+    for: 2m
+    noDataState: OK
+    execErrState: Error
+    labels:
+      severity: critical
+    annotations:
+      summary: '{{ index .Labels "host" }}: container {{ index .Labels "name" }} is unhealthy'
+      description: The Docker healthcheck of a critical container is failing.
+  - uid: health-collector-stale
+    title: Container health collector stale
+    condition: C
+    data:
+    - refId: A
+      relativeTimeRange:
+        from: 600
+        to: 0
+      datasourceUid: prometheus
+      model:
+        refId: A
+        expr: time() - docker_container_collector_last_run_timestamp_seconds
+        instant: true
+        range: false
+        intervalMs: 1000
+        maxDataPoints: 43200
+    - refId: C
+      datasourceUid: __expr__
+      model:
+        refId: C
+        type: threshold
+        expression: A
+        conditions:
+        - evaluator:
+            type: gt
+            params:
+            - 300
+    for: 5m
+    noDataState: OK
+    execErrState: Error
+    labels:
+      severity: warning
+    annotations:
+      summary: '{{ index .Labels "host" }}: container-health collector stopped reporting'
+      description: Container down/unhealthy alerts for this VM are blind until it is fixed.
+- orgId: 1
+  name: backups
+  folder: Infrastructure
+  interval: 5m
+  rules:
+  - uid: backup-failed
+    title: Backup job failed
+    condition: C
+    data:
+    - refId: A
+      relativeTimeRange:
+        from: 600
+        to: 0
+      datasourceUid: prometheus
+      model:
+        refId: A
+        expr: backup_last_status
+        instant: true
+        range: false
+        intervalMs: 1000
+        maxDataPoints: 43200
+    - refId: C
+      datasourceUid: __expr__
+      model:
+        refId: C
+        type: threshold
+        expression: A
+        conditions:
+        - evaluator:
+            type: lt
+            params:
+            - 1
+    for: 0s
+    noDataState: OK
+    execErrState: Error
+    labels:
+      severity: critical
+    annotations:
+      summary: '{{ index .Labels "host" }}: {{ index .Labels "backup_job" }} for {{ index .Labels "repo" }} failed'
+      description: 'Check the logs: docker compose logs backup-runner (vm1/vm2) or backup-maintenance (vm3).'
+  - uid: backup-stale
+    title: Backup stale
+    condition: C
+    data:
+    - refId: A
+      relativeTimeRange:
+        from: 600
+        to: 0
+      datasourceUid: prometheus
+      model:
+        refId: A
+        expr: (time() - backup_last_success_timestamp_seconds) - backup_max_age_seconds
+        instant: true
+        range: false
+        intervalMs: 1000
+        maxDataPoints: 43200
+    - refId: C
+      datasourceUid: __expr__
+      model:
+        refId: C
+        type: threshold
+        expression: A
+        conditions:
+        - evaluator:
+            type: gt
+            params:
+            - 0
+    for: 0s
+    noDataState: OK
+    execErrState: Error
+    labels:
+      severity: critical
+    annotations:
+      summary: '{{ index .Labels "host" }}: no successful {{ index .Labels "backup_job" }} for {{ index .Labels "repo" }} within the expected interval'
+      description: The job has not succeeded within its --max-age (runner down, job failing or never ran).

@@ -1,0 +1,27 @@
+#!/usr/bin/env bash
+# MongoDB backup: mongodump --archive (optionally --oplog for a consistent
+# point-in-time dump on replica sets), run inside the mongo container and
+# streamed into restic. Credentials come from the container's
+# MONGO_INITDB_ROOT_USERNAME / MONGO_INITDB_ROOT_PASSWORD.
+#
+# env: MONGO_CONTAINERS (required), MONGO_OPLOG, MONGO_DUMP_EXTRA_ARGS
+set -Eeuo pipefail
+source /usr/local/lib/backup/common.sh
+
+if [[ ${1:-} == --enabled ]]; then [[ -n ${MONGO_CONTAINERS:-} ]]; exit; fi
+
+args=(--archive --quiet)
+[[ ${MONGO_OPLOG:-false} == true ]] && args+=(--oplog)
+read -r -a extra <<<"${MONGO_DUMP_EXTRA_ARGS:-}"
+args+=("${extra[@]}")
+
+for container in $(words "$MONGO_CONTAINERS"); do
+  # -gzip is intentionally not used: restic compresses and deduplicates.
+  restic_stdin "mongodb-$container.archive" mongodb "container:$container" -- \
+    docker exec "$container" sh -c '
+      if [ -n "${MONGO_INITDB_ROOT_USERNAME:-}" ]; then
+        set -- -u "$MONGO_INITDB_ROOT_USERNAME" -p "$MONGO_INITDB_ROOT_PASSWORD" \
+               --authenticationDatabase admin "$@"
+      fi
+      exec mongodump "$@"' _ "${args[@]}"
+done

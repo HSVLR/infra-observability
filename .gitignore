@@ -1,0 +1,6 @@
+# secrets
+.env
+monitoring-server/rest-server/htpasswd
+monitoring-server/rest-server/*.key
+monitoring-server/restic/passwords/*
+!monitoring-server/restic/passwords/.gitkeep

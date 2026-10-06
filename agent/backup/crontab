@@ -1,0 +1,13 @@
+# supercronic crontab for backup-runner (vm1 / vm2). Times are in $TZ.
+#
+#   run-job [--max-age SECONDS] <job>
+#
+# --max-age = how old the last successful run may get before the
+# "Backup stale" alert fires (default 93600 = 26h).
+# Jobs whose config in .env is empty are skipped and export no metrics.
+# Keep runs away from 05:00-07:00: vm3 prunes/checks the repositories then.
+
+0  1 * * *   run-job postgres
+20 1 * * *   run-job mongodb
+40 1 * * *   run-job minio
+0  3 * * *   run-job files

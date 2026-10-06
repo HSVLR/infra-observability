@@ -1,0 +1,11 @@
+#!/usr/bin/env bash
+# Create the restic repository if it does not exist yet (vm1/vm2).
+#   docker compose run --rm backup-runner restic-init
+set -Eeuo pipefail
+source /usr/local/lib/backup/common.sh
+
+if restic cat config >/dev/null 2>&1; then
+  log "repository already initialised: ${RESTIC_REPOSITORY%%@*}@…"
+else
+  restic init
+fi

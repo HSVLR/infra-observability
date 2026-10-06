@@ -1,0 +1,23 @@
+# supercronic crontab for backup-maintenance on vm3. Times are in $TZ.
+# One line per repository and job — add lines when a new VM is backed up.
+#
+#   run-job [--max-age SECONDS] <job> <repo>
+#
+# Client backups run 01:00-04:00, so maintenance runs 05:00-07:00
+# (prune takes an exclusive lock on the repository).
+
+# repository size / snapshot count — daily
+30 4 * * *   run-job stats vm1
+32 4 * * *   run-job stats vm2
+
+# retention + prune — daily
+0  5 * * *   run-job prune vm1
+30 5 * * *   run-job prune vm2
+
+# integrity check reading 5% of the data — weekly (max age 8 days)
+0  6 * * 0   run-job --max-age 691200 check vm1
+30 6 * * 0   run-job --max-age 691200 check vm2
+
+# restore test into temporary containers — monthly (max age 32 days)
+0  7 1 * *   run-job --max-age 2764800 restore-test vm1
+0  8 1 * *   run-job --max-age 2764800 restore-test vm2

@@ -1,0 +1,90 @@
+# Agent stack — runs on every VM that is monitored (vm1, vm2 and also vm3 itself).
+#
+#   node-exporter     VM metrics (CPU / RAM / disk / network) + textfile metrics
+#   cadvisor          per-container CPU / RAM metrics
+#   container-health  docker running/healthy state -> textfile metrics
+#   backup-runner     scheduled restic backups to vm3   (profile "backup": vm1, vm2 only)
+
+name: observability-agent
+
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
+services:
+  node-exporter:
+    image: prom/node-exporter:v1.8.2
+    command:
+      - --path.rootfs=/host
+      - --web.listen-address=${NODE_EXPORTER_LISTEN:-0.0.0.0:9100}
+      - --collector.textfile.directory=/textfile
+      - --collector.filesystem.mount-points-exclude=^/(dev|proc|sys|run|var/lib/docker/.+|var/lib/containerd/.+)($|/)
+    network_mode: host
+    pid: host
+    restart: unless-stopped
+    volumes:
+      - /:/host:ro,rslave
+      - ${TEXTFILE_HOST_DIR:-/var/lib/node-exporter/textfile}:/textfile:ro
+    logging: *logging
+
+  cadvisor:
+    image: gcr.io/cadvisor/cadvisor:v0.49.1
+    command:
+      - --docker_only=true
+      - --housekeeping_interval=30s
+      - --store_container_labels=false
+      - --whitelisted_container_labels=com.docker.compose.project,com.docker.compose.service
+      - --disable_metrics=advtcp,cpu_topology,cpuset,hugetlb,memory_numa,percpu,process,referenced_memory,resctrl,sched,tcp,udp
+    # Published docker ports bypass ufw — bind to the private IP (see docs/firewall.md).
+    ports:
+      - "${CADVISOR_BIND:-0.0.0.0}:${CADVISOR_PORT:-9338}:8080"
+    privileged: true
+    devices:
+      - /dev/kmsg
+    restart: unless-stopped
+    volumes:
+      - /:/rootfs:ro
+      - /var/run:/var/run:ro
+      - /sys:/sys:ro
+      - /var/lib/docker/:/var/lib/docker:ro
+      - /dev/disk/:/dev/disk:ro
+    logging: *logging
+
+  container-health:
+    image: docker:27-cli
+    entrypoint: ["/bin/sh", "/collect.sh"]
+    environment:
+      CRITICAL_CONTAINERS: ${CRITICAL_CONTAINERS:-}
+      INTERVAL: ${HEALTH_INTERVAL:-30}
+    restart: unless-stopped
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - ./health-collector/collect.sh:/collect.sh:ro
+      - ${TEXTFILE_HOST_DIR:-/var/lib/node-exporter/textfile}:/textfile
+    logging: *logging
+
+  backup-runner:
+    profiles: ["backup"]
+    build: ../images/backup-runner
+    image: local/backup-runner:latest
+    env_file: .env
+    environment:
+      TZ: ${TZ:-UTC}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    restart: unless-stopped
+    volumes:
+      # docker exec into the database containers (pg_dump / mongodump of the same version)
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ./backup/crontab:/etc/backup/crontab:ro
+      - ./backup/files-exclude.txt:/etc/backup/files-exclude.txt:ro
+      - ${TEXTFILE_HOST_DIR:-/var/lib/node-exporter/textfile}:/textfile
+      - ${FILES_SOURCE_HOST_DIR:-/opt}:/source/files:ro
+      - ${MINIO_STAGING_HOST_DIR:-/var/lib/backup-staging/minio}:/staging/minio
+      - restic-cache:/cache
+    logging: *logging
+
+volumes:
+  restic-cache:

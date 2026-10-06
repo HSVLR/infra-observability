@@ -1,0 +1,500 @@
+<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>برنامه بکاپ سرویس‌های دیتابیس</title>
+
+  <style>
+    :root {
+      --bg: #f4f7fb;
+      --card: #ffffff;
+      --text: #172033;
+      --muted: #667085;
+      --primary: #315bea;
+      --primary-light: #eaf0ff;
+      --success: #16855b;
+      --success-light: #e8f8f0;
+      --warning: #b7791f;
+      --warning-light: #fff7df;
+      --danger: #c0392b;
+      --border: #e4e9f2;
+      --shadow: 0 10px 30px rgba(30, 50, 90, 0.08);
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--text);
+      font-family: Tahoma, Arial, sans-serif;
+      line-height: 1.9;
+    }
+
+    .container {
+      width: min(1180px, calc(100% - 32px));
+      margin: 0 auto;
+    }
+
+    header {
+      margin: 32px 0 24px;
+      padding: 34px;
+      color: white;
+      border-radius: 22px;
+      background: linear-gradient(135deg, #2948c8, #5d7bf4);
+      box-shadow: var(--shadow);
+    }
+
+    header h1 {
+      margin: 0 0 8px;
+      font-size: 30px;
+    }
+
+    header p {
+      margin: 0;
+      color: #e7ecff;
+      font-size: 16px;
+    }
+
+    .notice {
+      margin: 20px 0;
+      padding: 18px 22px;
+      border-right: 5px solid var(--warning);
+      border-radius: 14px;
+      background: var(--warning-light);
+    }
+
+    .notice strong {
+      color: var(--warning);
+    }
+
+    .section-title {
+      margin: 32px 0 14px;
+      font-size: 22px;
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 16px;
+    }
+
+    .card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 18px;
+      padding: 22px;
+      box-shadow: var(--shadow);
+    }
+
+    .service-card {
+      position: relative;
+      overflow: hidden;
+    }
+
+    .service-card::before {
+      content: "";
+      position: absolute;
+      top: 0;
+      right: 0;
+      left: 0;
+      height: 5px;
+      background: var(--primary);
+    }
+
+    .service-card h3 {
+      margin: 8px 0;
+      font-size: 20px;
+    }
+
+    .service-card p {
+      color: var(--muted);
+      font-size: 14px;
+      min-height: 76px;
+    }
+
+    .tag {
+      display: inline-block;
+      padding: 3px 10px;
+      border-radius: 999px;
+      color: var(--primary);
+      background: var(--primary-light);
+      font-size: 12px;
+      font-weight: bold;
+    }
+
+    .important {
+      color: var(--danger);
+      font-weight: bold;
+    }
+
+    .table-wrapper {
+      overflow-x: auto;
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 18px;
+      box-shadow: var(--shadow);
+    }
+
+    table {
+      width: 100%;
+      min-width: 760px;
+      border-collapse: collapse;
+    }
+
+    th,
+    td {
+      padding: 15px 16px;
+      text-align: right;
+      border-bottom: 1px solid var(--border);
+    }
+
+    th {
+      color: #263b87;
+      background: var(--primary-light);
+      font-size: 14px;
+    }
+
+    tr:last-child td {
+      border-bottom: 0;
+    }
+
+    .steps {
+      display: grid;
+      gap: 14px;
+    }
+
+    .step {
+      display: flex;
+      gap: 16px;
+      align-items: flex-start;
+      padding: 18px;
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      box-shadow: var(--shadow);
+    }
+
+    .number {
+      display: grid;
+      flex: 0 0 38px;
+      height: 38px;
+      place-items: center;
+      color: white;
+      border-radius: 50%;
+      background: var(--primary);
+      font-weight: bold;
+    }
+
+    .step h3 {
+      margin: 0 0 4px;
+      font-size: 17px;
+    }
+
+    .step p {
+      margin: 0;
+      color: var(--muted);
+    }
+
+    .checklist {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 12px;
+    }
+
+    .check {
+      padding: 14px 16px;
+      border-radius: 12px;
+      background: var(--success-light);
+      color: #176b4d;
+    }
+
+    .check::before {
+      content: "✓";
+      margin-left: 8px;
+      font-weight: bold;
+    }
+
+    footer {
+      margin: 34px 0;
+      padding: 20px;
+      color: var(--muted);
+      text-align: center;
+      font-size: 13px;
+    }
+
+    @media (max-width: 900px) {
+      .grid {
+        grid-template-columns: repeat(2, 1fr);
+      }
+    }
+
+    @media (max-width: 600px) {
+      header {
+        padding: 24px;
+      }
+
+      header h1 {
+        font-size: 24px;
+      }
+
+      .grid,
+      .checklist {
+        grid-template-columns: 1fr;
+      }
+
+      .card {
+        padding: 18px;
+      }
+    }
+  </style>
+</head>
+
+<body>
+  <main class="container">
+
+    <header>
+      <h1>برنامه بکاپ‌گیری سرویس‌های دیتابیس</h1>
+      <p>
+        مناسب برای سرویس‌های Docker داخل VM
+      </p>
+    </header>
+
+    <div class="notice">
+      <strong>اصل مهم:</strong>
+	  باید از خود سرویس‌ها بکاپ منطقی یا سرویس‌محور
+      بگیریم و خروجی را به یک مقصد خارجی منتقل کنیم.
+    </div>
+
+    <h2 class="section-title">دامنه بکاپ</h2>
+
+    <section class="grid">
+      <article class="card service-card">
+        <span class="tag">ضروری</span>
+        <h3>PostgreSQL</h3>
+        <p>
+          بکاپ کامل از دیتابیس‌ها، کاربران، roleها و در حالت حرفه‌ای آرشیو WAL.
+        </p>
+        <strong>روش:</strong> Logical Backup + در آینده PITR
+      </article>
+
+      <article class="card service-card">
+        <span class="tag">ضروری</span>
+        <h3>MongoDB</h3>
+        <p>
+          بکاپ از دیتابیس‌ها، collectionها، indexها و کاربران MongoDB.
+        </p>
+        <strong>روش:</strong> mongodump همراه با oplog
+      </article>
+
+      <article class="card service-card">
+        <span class="tag">در صورت وجود فایل مهم</span>
+        <h3>MinIO</h3>
+        <p>
+          بکاپ objectها، bucketها، نسخه‌ها، policyها و تنظیمات دسترسی.
+        </p>
+        <strong>روش:</strong> Replication یا Mirror به مقصد خارجی
+      </article>
+
+      <article class="card service-card">
+        <span class="tag">وابسته به نوع استفاده</span>
+        <h3>Redis</h3>
+        <p>
+          اگر فقط Cache است، بکاپ ضروری نیست. اگر session، queue یا داده اصلی دارد،
+          باید بکاپ گرفته شود.
+        </p>
+        <strong>روش:</strong> RDB و در صورت نیاز AOF
+      </article>
+    </section>
+
+    <h2 class="section-title">معماری پیشنهادی</h2>
+
+    <section class="card">
+      <p style="text-align:center; font-size:18px;">
+        PostgreSQL / MongoDB / Redis / MinIO
+        <br />
+        ↓
+        <br />
+        <strong>Backup Runner</strong>
+        <br />
+        ↓
+        <br />
+        فشرده‌سازی + رمزنگاری + بررسی صحت
+        <br />
+        ↓
+        <br />
+        <strong>مخزن خارجی S3 یا MinIO مستقل</strong>
+      </p>
+
+      <div class="notice" style="margin-bottom:0;">
+        بکاپ نباید فقط داخل همان VM یا همان MinIO نگهداری شود؛
+        چون خرابی VM یا دیسک می‌تواند هم سرویس اصلی و هم بکاپ را از بین ببرد.
+      </div>
+    </section>
+
+    <h2 class="section-title">زمان‌بندی اولیه</h2>
+
+    <div class="table-wrapper">
+      <table>
+        <thead>
+          <tr>
+            <th>سرویس</th>
+            <th>عملیات</th>
+            <th>زمان‌بندی</th>
+            <th>Retention پیشنهادی</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>PostgreSQL</td>
+            <td>Logical Backup</td>
+            <td>روزانه</td>
+            <td>۱۴ تا ۳۰ روز</td>
+          </tr>
+          <tr>
+            <td>MongoDB</td>
+            <td>Dump همراه با Oplog</td>
+            <td>روزانه</td>
+            <td>۱۴ تا ۳۰ روز</td>
+          </tr>
+          <tr>
+            <td>Redis</td>
+            <td>RDB</td>
+            <td>هر ۱ تا ۶ ساعت، در صورت اهمیت داده</td>
+            <td>۷ تا ۱۴ روز</td>
+          </tr>
+          <tr>
+            <td>MinIO</td>
+            <td>Replication یا Mirror</td>
+            <td>پیوسته یا ساعتی</td>
+            <td>بر اساس Versioning</td>
+          </tr>
+          <tr>
+            <td>تنظیمات</td>
+            <td>Docker Compose، policy و config</td>
+            <td>روزانه و بعد از هر تغییر</td>
+            <td>۳۰ روز یا بیشتر</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h2 class="section-title">مراحل پیاده‌سازی</h2>
+
+    <section class="steps">
+      <article class="step">
+        <div class="number">۱</div>
+        <div>
+          <h3>ایجاد Backup Runner</h3>
+          <p>
+            یک کانتینر یا سرویس مجزا برای اجرای jobهای بکاپ و زمان‌بندی آن‌ها ایجاد شود.
+          </p>
+        </div>
+      </article>
+
+      <article class="step">
+        <div class="number">۲</div>
+        <div>
+          <h3>راه‌اندازی مخزن خارجی</h3>
+          <p>
+            یک S3 یا MinIO مستقل خارج از VM ایجاد شود. دسترسی آن فقط برای Backup Runner باشد.
+          </p>
+        </div>
+      </article>
+
+      <article class="step">
+        <div class="number">۳</div>
+        <div>
+          <h3>اجرای بکاپ سرویس‌ها</h3>
+          <p>
+            برای PostgreSQL و MongoDB خروجی dump گرفته شود؛ برای Redis فایل persistence
+            و برای MinIO replication یا mirror اجرا شود.
+          </p>
+        </div>
+      </article>
+
+      <article class="step">
+        <div class="number">۴</div>
+        <div>
+          <h3>رمزنگاری و انتقال</h3>
+          <p>
+            خروجی‌ها فشرده، رمزنگاری و سپس به مخزن خارجی منتقل شوند. فایل موقت محلی بعد از
+            انتقال موفق حذف شود.
+          </p>
+        </div>
+      </article>
+
+      <article class="step">
+        <div class="number">۵</div>
+        <div>
+          <h3>ثبت وضعیت و هشدار</h3>
+          <p>
+            موفق یا ناموفق بودن job، حجم فایل، checksum، مدت اجرا و زمان آخرین بکاپ ثبت شود.
+          </p>
+        </div>
+      </article>
+
+      <article class="step">
+        <div class="number">۶</div>
+        <div>
+          <h3>تست Restore</h3>
+          <p>
+            حداقل ماهی یک‌بار بکاپ‌ها روی محیط موقت restore و صحت داده‌ها بررسی شود.
+          </p>
+        </div>
+      </article>
+    </section>
+
+    <h2 class="section-title">مواردی که باید جداگانه نگهداری شوند</h2>
+
+    <section class="card">
+      <div class="checklist">
+        <div class="check">فایل‌های Docker Compose</div>
+        <div class="check">فایل‌های Environment بدون افشای Secret</div>
+        <div class="check">کاربران و Roleهای PostgreSQL</div>
+        <div class="check">کاربران و Roleهای MongoDB</div>
+        <div class="check">Bucket Policyهای MinIO</div>
+        <div class="check">Certificateها و تنظیمات TLS</div>
+        <div class="check">کلید رمزنگاری بکاپ</div>
+        <div class="check">مستندات Restore و Runbook</div>
+      </div>
+    </section>
+
+    <h2 class="section-title">ترتیب Restore در زمان خرابی</h2>
+
+    <section class="card">
+      <ol>
+        <li>ساخت VM یا محیط جدید</li>
+        <li>راه‌اندازی Docker و نسخه‌های سازگار سرویس‌ها</li>
+        <li>Restore کردن PostgreSQL و MongoDB</li>
+        <li>Restore یا بازسازی Redis</li>
+        <li>Restore کردن MinIO و policyهای آن</li>
+        <li>اتصال application به سرویس‌های بازیابی‌شده</li>
+        <li>بررسی login، خواندن، نوشتن و داده‌های مهم</li>
+        <li>فعال کردن دوباره jobهای بکاپ</li>
+      </ol>
+    </section>
+
+    <h2 class="section-title">نسخه پیشنهادی برای شروع</h2>
+
+    <section class="card">
+      <ul>
+        <li><strong>PostgreSQL:</strong> بکاپ منطقی روزانه</li>
+        <li><strong>MongoDB:</strong> mongodump روزانه همراه با oplog</li>
+        <li><strong>Redis:</strong> فقط اگر داده مهم دارد؛ RDB دوره‌ای</li>
+        <li><strong>MinIO:</strong> Versioning و انتقال به MinIO یا S3 خارجی</li>
+        <li><strong>Backup Runner:</strong> اجرای زمان‌بندی‌شده و ارسال خروجی به مقصد خارجی</li>
+        <li><strong>Restore Test:</strong> حداقل ماهی یک‌بار</li>
+      </ul>
+    </section>
+
+    <footer>
+      بکاپی که Restore آن تست نشده باشد، بکاپ قابل اعتماد محسوب نمی‌شود.
+    </footer>
+
+  </main>
+</body>
+</html>

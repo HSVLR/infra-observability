@@ -1,0 +1,11 @@
+# restic --exclude-file patterns for the "files" job (paths are under /source/files)
+**/node_modules
+**/.cache
+**/*.log
+**/tmp
+# Database data directories are backed up logically — don't copy raw files.
+**/pgdata
+**/postgres-data
+**/mongo-data
+**/minio-data
+**/redis-data

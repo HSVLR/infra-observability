@@ -1,0 +1,17 @@
+#!/usr/bin/env bash
+# vm3 only. Apply the retention policy and prune a repository. The clients
+# write through rest-server in append-only mode and cannot delete anything,
+# so retention is enforced here, directly on the local repository.
+#
+# env: KEEP_DAILY KEEP_WEEKLY KEEP_MONTHLY
+set -Eeuo pipefail
+source /usr/local/lib/backup/common.sh
+
+if [[ ${1:-} == --enabled ]]; then [[ -d /repos ]]; exit; fi
+use_local_repo "$1"
+
+restic unlock
+restic forget --prune \
+  --keep-daily "${KEEP_DAILY:-30}" \
+  --keep-weekly "${KEEP_WEEKLY:-8}" \
+  --keep-monthly "${KEEP_MONTHLY:-6}"

@@ -1,0 +1,14 @@
+# Notification channel. Token/chat id come from monitoring-server/.env.
+# Other channels (email, webhook, Slack, ...) can be added as more receivers;
+# see docs/alerting.md.
+apiVersion: 1
+contactPoints:
+  - orgId: 1
+    name: telegram
+    receivers:
+      - uid: telegram-main
+        type: telegram
+        disableResolveMessage: false   # send "RESOLVED" (recovery) messages
+        settings:
+          bottoken: ${TELEGRAM_BOT_TOKEN}
+          chatid: "${TELEGRAM_CHAT_ID}"

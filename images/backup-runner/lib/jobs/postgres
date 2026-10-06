@@ -1,0 +1,40 @@
+#!/usr/bin/env bash
+# Logical PostgreSQL backup: globals (roles, tablespaces) + one pg_dump -Fc per
+# database. pg_dump runs inside the postgres container (docker exec), so the
+# client version always matches the server. Dumps are streamed into restic.
+#
+# env: PG_CONTAINERS (required), PG_DATABASES, PG_USER
+set -Eeuo pipefail
+source /usr/local/lib/backup/common.sh
+
+if [[ ${1:-} == --enabled ]]; then [[ -n ${PG_CONTAINERS:-} ]]; exit; fi
+
+# Run a command inside the container as the dump user. The user defaults to
+# the container's own $POSTGRES_USER, so no credentials live in this project.
+pg_exec() {
+  local container=$1; shift
+  docker exec -e "PGUSER=${PG_USER:-}" "$container" \
+    sh -c 'export PGUSER="${PGUSER:-${POSTGRES_USER:-postgres}}"; exec "$@"' _ "$@"
+}
+
+for container in $(words "$PG_CONTAINERS"); do
+  pg_exec "$container" pg_isready -q || die "postgres in '$container' is not ready"
+
+  restic_stdin "postgres-$container-globals.sql" postgres "container:$container" globals -- \
+    docker exec -e "PGUSER=${PG_USER:-}" "$container" \
+    sh -c 'exec pg_dumpall -U "${PGUSER:-${POSTGRES_USER:-postgres}}" --globals-only'
+
+  if [[ -n ${PG_DATABASES:-} ]]; then
+    dbs=$(words "$PG_DATABASES")
+  else
+    dbs=$(pg_exec "$container" psql -d postgres -Atc \
+      "SELECT datname FROM pg_database WHERE NOT datistemplate AND datallowconn ORDER BY 1")
+  fi
+
+  for db in $dbs; do
+    # -Z0: leave compression to restic so deduplication between days works.
+    restic_stdin "postgres-$container-$db.dump" postgres "container:$container" "db:$db" -- \
+      docker exec -e "PGUSER=${PG_USER:-}" "$container" \
+      sh -c 'exec pg_dump -U "${PGUSER:-${POSTGRES_USER:-postgres}}" -Fc -Z0 "$1"' _ "$db"
+  done
+done

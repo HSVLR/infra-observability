@@ -1,0 +1,9 @@
+#!/usr/bin/env bash
+# File backup of compose files, configs, certificates, ... from the host
+# directory mounted at /source/files (FILES_SOURCE_HOST_DIR).
+set -Eeuo pipefail
+source /usr/local/lib/backup/common.sh
+
+if [[ ${1:-} == --enabled ]]; then [[ -d /source/files ]]; exit; fi
+
+restic_paths files --exclude-file /etc/backup/files-exclude.txt /source/files

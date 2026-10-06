@@ -1,0 +1,7 @@
+# cAdvisor on every VM (CADVISOR_PORT in agent/.env).
+- targets: ["10.0.0.11:9338"]
+  labels: { host: vm1 }
+- targets: ["10.0.0.12:9338"]
+  labels: { host: vm2 }
+- targets: ["10.0.0.13:9338"]
+  labels: { host: vm3 }

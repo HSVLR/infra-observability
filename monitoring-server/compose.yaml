@@ -1,0 +1,117 @@
+# Monitoring & backup server — runs on vm3 only.
+#
+#   prometheus          scrapes the agents on vm1, vm2, vm3
+#   grafana             dashboards + alerting (no Alertmanager in phase 1)
+#   blackbox-exporter   ping / HTTP probes of vm1, vm2 from outside
+#   rest-server         restic repository server, data on vm3's local disk
+#   backup-maintenance  prune / check / stats / restore-test of the repositories
+#
+# vm3 also runs the agent stack (../agent) for its own node/container metrics.
+
+name: observability-server
+
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
+services:
+  prometheus:
+    image: prom/prometheus:v2.55.1
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --storage.tsdb.retention.time=${PROMETHEUS_RETENTION:-30d}
+      - --web.enable-lifecycle
+    ports:
+      # Not exposed publicly: use an SSH tunnel or Grafana's Explore.
+      - "127.0.0.1:9090:9090"
+    restart: unless-stopped
+    volumes:
+      - ./prometheus:/etc/prometheus:ro
+      - prometheus-data:/prometheus
+    logging: *logging
+
+  grafana:
+    image: grafana/grafana:11.4.0
+    environment:
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-admin}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:?set GRAFANA_ADMIN_PASSWORD in .env}
+      GF_SERVER_ROOT_URL: ${GRAFANA_ROOT_URL:-http://localhost:3000}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_ANALYTICS_REPORTING_ENABLED: "false"
+      GF_ANALYTICS_CHECK_FOR_UPDATES: "false"
+      GF_DATE_FORMATS_DEFAULT_TIMEZONE: ${TZ:-browser}
+      # used by provisioning/alerting/contact-points.yaml
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
+      TELEGRAM_CHAT_ID: ${TELEGRAM_CHAT_ID:-}
+    ports:
+      - "${GRAFANA_BIND:-0.0.0.0}:3000:3000"
+    restart: unless-stopped
+    depends_on:
+      - prometheus
+    volumes:
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - grafana-data:/var/lib/grafana
+    logging: *logging
+
+  blackbox-exporter:
+    image: prom/blackbox-exporter:v0.25.0
+    command:
+      - --config.file=/etc/blackbox/blackbox.yml
+    cap_add:
+      - NET_RAW
+    restart: unless-stopped
+    volumes:
+      - ./blackbox:/etc/blackbox:ro
+    logging: *logging
+
+  rest-server:
+    image: restic/rest-server:0.13.0
+    environment:
+      PASSWORD_FILE: /etc/rest-server/htpasswd
+      # --append-only : clients can add snapshots but never delete/overwrite them
+      #                 (a compromised vm1/vm2 cannot destroy its backups)
+      # --private-repos: user "vm1" can only access /vm1/
+      OPTIONS: >-
+        --append-only --private-repos --prometheus --prometheus-no-auth
+        ${REST_SERVER_EXTRA_OPTIONS:-}
+    ports:
+      # Published docker ports bypass ufw — bind to vm3's private IP.
+      - "${REST_SERVER_BIND:-0.0.0.0}:8000:8000"
+    restart: unless-stopped
+    volumes:
+      - ${RESTIC_DATA_HOST_DIR:-/srv/restic}:/data
+      - ./rest-server:/etc/rest-server:ro
+    logging: *logging
+
+  backup-maintenance:
+    build: ../images/backup-runner
+    image: local/backup-runner:latest
+    environment:
+      TZ: ${TZ:-UTC}
+      HOST_NAME: vm3
+      KEEP_DAILY: ${KEEP_DAILY:-30}
+      KEEP_WEEKLY: ${KEEP_WEEKLY:-8}
+      KEEP_MONTHLY: ${KEEP_MONTHLY:-6}
+      CHECK_READ_SUBSET: ${CHECK_READ_SUBSET:-5%}
+      RESTORE_TESTS: ${RESTORE_TESTS:-}
+      RESTORE_PG_IMAGE: ${RESTORE_PG_IMAGE:-postgres:16}
+      RESTORE_MONGO_IMAGE: ${RESTORE_MONGO_IMAGE:-mongo:7}
+    restart: unless-stopped
+    volumes:
+      - ${RESTIC_DATA_HOST_DIR:-/srv/restic}:/repos
+      - ./restic/passwords:/secrets:ro
+      - ./maintenance/crontab:/etc/backup/crontab:ro
+      - ${TEXTFILE_HOST_DIR:-/var/lib/node-exporter/textfile}:/textfile
+      # restore-test starts temporary postgres/mongo containers
+      - /var/run/docker.sock:/var/run/docker.sock
+      - restic-cache:/cache
+    logging: *logging
+
+volumes:
+  prometheus-data:
+  grafana-data:
+  restic-cache:

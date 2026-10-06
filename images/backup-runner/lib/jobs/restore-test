@@ -1,0 +1,79 @@
+#!/usr/bin/env bash
+# vm3 only. Restore the latest dumps of a repository into throw-away database
+# containers and run sanity queries. "A backup whose restore is not tested
+# is not a backup."
+#
+# env: RESTORE_TESTS       space separated entries, one per dump:
+#                            <repo>/postgres/<container>/<db>
+#                            <repo>/mongodb/<container>
+#      RESTORE_PG_IMAGE    image for the temporary postgres  (default postgres:16)
+#      RESTORE_MONGO_IMAGE image for the temporary mongo     (default mongo:7)
+set -Eeuo pipefail
+source /usr/local/lib/backup/common.sh
+
+repo=${2:-${1:-}}
+if [[ ${1:-} == --enabled ]]; then
+  [[ -d /repos && " $(words "${RESTORE_TESTS:-}") " == *" $repo/"* ]]
+  exit
+fi
+use_local_repo "$repo"
+
+tmp_containers=()
+cleanup() { ((${#tmp_containers[@]})) && docker rm -f "${tmp_containers[@]}" >/dev/null 2>&1 || true; }
+trap cleanup EXIT
+
+# wait_for <seconds> <command...>
+wait_for() {
+  local deadline=$((SECONDS + $1)); shift
+  until "$@" >/dev/null 2>&1; do
+    ((SECONDS < deadline)) || return 1
+    sleep 2
+  done
+}
+
+# Stream a file of the latest snapshot that contains it.
+dump_latest() { restic dump --no-lock --host "$repo" --path "/$1" latest "/$1"; }
+
+test_postgres() {
+  local container=$1 db=$2 name="restore-test-pg-$$-$RANDOM" tables
+  docker run -d --rm --name "$name" -e POSTGRES_PASSWORD=restore-test \
+    "${RESTORE_PG_IMAGE:-postgres:16}" >/dev/null
+  tmp_containers+=("$name")
+  # TCP check: during initdb the temporary server listens on the socket only.
+  wait_for 120 docker exec "$name" pg_isready -h 127.0.0.1 -U postgres || die "temporary postgres did not start"
+
+  docker exec "$name" createdb -U postgres restored
+  dump_latest "postgres-$container-$db.dump" \
+    | docker exec -i "$name" pg_restore -U postgres --no-owner --no-privileges --exit-on-error -d restored
+
+  tables=$(docker exec "$name" psql -U postgres -d restored -Atc \
+    "SELECT count(*) FROM information_schema.tables WHERE table_schema NOT IN ('pg_catalog','information_schema')")
+  log "postgres $container/$db restored: $tables tables"
+  ((tables > 0)) || die "restored database $db has no tables"
+}
+
+test_mongodb() {
+  local container=$1 name="restore-test-mongo-$$-$RANDOM" dbs
+  docker run -d --rm --name "$name" "${RESTORE_MONGO_IMAGE:-mongo:7}" >/dev/null
+  tmp_containers+=("$name")
+  wait_for 120 docker exec "$name" mongosh --quiet --eval 'db.runCommand({ ping: 1 })' \
+    || die "temporary mongo did not start"
+
+  dump_latest "mongodb-$container.archive" \
+    | docker exec -i "$name" mongorestore --archive --quiet
+
+  dbs=$(docker exec "$name" mongosh --quiet --eval \
+    'db.adminCommand({ listDatabases: 1 }).databases.filter(d => !["admin","local","config"].includes(d.name)).length')
+  log "mongodb $container restored: $dbs databases"
+  ((dbs > 0)) || die "restored mongodb has no databases"
+}
+
+for entry in $(words "$RESTORE_TESTS"); do
+  IFS=/ read -r r kind container db <<<"$entry"
+  [[ $r == "$repo" ]] || continue
+  case $kind in
+    postgres) test_postgres "$container" "$db" ;;
+    mongodb)  test_mongodb "$container" ;;
+    *)        die "unknown restore test kind '$kind' in '$entry'" ;;
+  esac
+done

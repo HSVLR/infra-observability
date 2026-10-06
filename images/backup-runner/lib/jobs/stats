@@ -1,0 +1,20 @@
+#!/usr/bin/env bash
+# vm3 only. Export repository size and snapshot count as metrics.
+set -Eeuo pipefail
+source /usr/local/lib/backup/common.sh
+
+if [[ ${1:-} == --enabled ]]; then [[ -d /repos ]]; exit; fi
+repo=$1
+use_local_repo "$repo"
+
+size=$(du -sb "/repos/$repo" | cut -f1)
+snapshots=$(restic snapshots --no-lock --json | jq length)
+
+write_prom "restic_repo_$repo.prom" <<METRICS
+# HELP restic_repo_size_bytes Disk space used by the repository on vm3.
+# TYPE restic_repo_size_bytes gauge
+restic_repo_size_bytes{repo="$repo"} $size
+# HELP restic_repo_snapshots Number of snapshots in the repository.
+# TYPE restic_repo_snapshots gauge
+restic_repo_snapshots{repo="$repo"} $snapshots
+METRICS

@@ -1,0 +1,52 @@
+#!/usr/bin/env bash
+# Run one backup/maintenance job, serialised with the other jobs of this
+# container, and export its outcome as Prometheus metrics.
+#
+#   run-job [--max-age SECONDS] <job> [repo]
+#
+# <job>   a script in /usr/local/lib/backup/jobs
+# <repo>  repository name; defaults to this host (vm1/vm2). On vm3 it selects
+#         /repos/<repo>.
+set -Eeuo pipefail
+source /usr/local/lib/backup/common.sh
+
+max_age=93600
+if [[ ${1:-} == --max-age ]]; then
+  max_age=$2
+  shift 2
+fi
+JOB=${1:?usage: run-job [--max-age SECONDS] <job> [repo]}
+REPO=${2:-$RESTIC_HOST}
+export JOB REPO
+
+script=$JOBS_DIR/$JOB
+[[ -x $script ]] || die "unknown job '$JOB'"
+
+# Jobs that are not configured on this host exit 3 and export nothing.
+"$script" --enabled "$REPO" || { log "not configured on this host, skipping"; exit 0; }
+
+ADDED_FILE=$(mktemp)
+export ADDED_FILE
+trap 'rm -f "$ADDED_FILE"' EXIT
+
+exec 9>/tmp/backup-runner.lock
+start=$(date +%s)
+status=0
+if flock -w "${LOCK_TIMEOUT:-7200}" 9; then
+  log "started"
+  # Separate process so that errexit inside the job is not disabled by "if".
+  if "$script" "$REPO"; then status=1; fi
+else
+  log "ERROR: timed out waiting for another job to finish"
+fi
+end=$(date +%s)
+
+added=$(awk '{ s += $1 } END { printf "%d", s }' "$ADDED_FILE")
+write_job_metrics "$status" "$start" "$end" "$added" "$max_age"
+
+if ((status)); then
+  log "finished in $((end - start))s, added $added bytes"
+else
+  log "FAILED after $((end - start))s"
+  exit 1
+fi

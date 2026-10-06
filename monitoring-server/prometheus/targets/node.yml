@@ -1,0 +1,7 @@
+# node-exporter on every VM. Replace the IPs with the private IPs of the VMs.
+- targets: ["10.0.0.11:9100"]
+  labels: { host: vm1 }
+- targets: ["10.0.0.12:9100"]
+  labels: { host: vm2 }
+- targets: ["10.0.0.13:9100"]
+  labels: { host: vm3 }

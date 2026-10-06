@@ -1,0 +1,10 @@
+#!/usr/bin/env bash
+# vm3 only. Verify repository structure and read back a sample of the data.
+# env: CHECK_READ_SUBSET (default 5%)
+set -Eeuo pipefail
+source /usr/local/lib/backup/common.sh
+
+if [[ ${1:-} == --enabled ]]; then [[ -d /repos ]]; exit; fi
+use_local_repo "$1"
+
+restic check --read-data-subset="${CHECK_READ_SUBSET:-5%}"

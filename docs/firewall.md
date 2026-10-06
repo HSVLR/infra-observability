@@ -1,46 +1,62 @@
-# Firewall و امنیت شبکه
+# Firewall and network security
 
-| مقصد | پورت | فقط از |
+| Destination | Port | Allowed from |
 |---|---|---|
-| vm1، vm2، vm3 | 9100 (node-exporter) | vm3 |
-| vm1، vm2، vm3 | 9338 (cAdvisor) | vm3 |
-| vm3 | 8000 (rest-server) | vm1، vm2 |
-| vm3 | 3000 (Grafana) | شبکه‌ی ادمین‌ها / VPN |
-| vm3 | 9090 (Prometheus) | فقط localhost (SSH tunnel) |
+| vm1, vm2, vm3 | 9100 (node-exporter) | vm3 |
+| vm1, vm2, vm3 | 9338 (cAdvisor) | vm3 |
+| vm3 | 8000 (rest-server) | vm1, vm2 |
+| vm3 | 3000 (Grafana) | admin network / VPN |
+| vm3 | 9090 (Prometheus) | localhost only (SSH tunnel) |
 
-## نکته‌ی مهم: Docker و ufw
+## Important: Docker and ufw
 
-پورت‌هایی که Docker با `ports:` publish می‌کند مستقیم در iptables (زنجیره‌ی `DOCKER`) باز می‌شوند و **قوانین ufw روی آن‌ها اعمال نمی‌شود**.
-برای همین:
+Ports that Docker publishes with `ports:` are opened directly in iptables (the `DOCKER` chain).
+**ufw rules do not apply to them.** Therefore:
 
-1. در `.env` پورت‌ها را به **IP خصوصی** bind کنید:
-   - `agent/.env` ← `CADVISOR_BIND=10.0.0.11`
-   - `monitoring-server/.env` ← `REST_SERVER_BIND=10.0.0.13` و در صورت نیاز `GRAFANA_BIND`
-2. برای محدود کردن مبدأ، از زنجیره‌ی `DOCKER-USER` استفاده کنید. مثال روی vm1 (cAdvisor فقط از vm3):
+1. Bind published ports to the **private IP** in `.env`:
+   - `agent/.env`: `CADVISOR_BIND=10.0.0.11`
+   - `monitoring-server/.env`: `REST_SERVER_BIND=10.0.0.13`, and `GRAFANA_BIND` if needed
+2. Restrict the allowed sources in the `DOCKER-USER` chain. Each `-I DOCKER-USER 1` inserts at the top,
+   so add the DROP rule first and the allow (`RETURN`) rules after it.
+
+On vm1 and vm2, allow cAdvisor from vm3 only:
 
 ```bash
-iptables -I DOCKER-USER -p tcp -m conntrack --ctorigdstport 9338 --ctdir ORIGINAL ! -s 10.0.0.13 -j DROP
+sudo iptables -I DOCKER-USER 1 -p tcp -m conntrack --ctdir ORIGINAL --ctorigdstport 9338 ! -s 10.0.0.13 -j DROP
 ```
 
-node-exporter با `network_mode: host` اجرا می‌شود، پس ufw معمولی روی آن کار می‌کند:
+On vm3, allow rest-server from vm1 and vm2 only, and cAdvisor from the local Prometheus container only:
 
 ```bash
-ufw allow from 10.0.0.13 to any port 9100 proto tcp
+M="-p tcp -m conntrack --ctdir ORIGINAL --ctorigdstport"
+sudo iptables -I DOCKER-USER 1 $M 8000 -j DROP
+sudo iptables -I DOCKER-USER 1 $M 8000 -s 10.0.0.12 -j RETURN
+sudo iptables -I DOCKER-USER 1 $M 8000 -s 10.0.0.11 -j RETURN
+sudo iptables -I DOCKER-USER 1 $M 9338 ! -s 172.16.0.0/12 -j DROP
 ```
 
-روی vm3، Prometheus داخل شبکه‌ی Docker است و node-exporter خود vm3 را از طریق IP خصوصی vm3 scrape می‌کند؛
-اگر ufw فعال است، ترافیک شبکه‌ی Docker را هم مجاز کنید:
+Make the rules persistent, for example with `iptables-persistent` (`sudo netfilter-persistent save`).
+
+node-exporter runs with `network_mode: host`, so normal ufw rules apply to it:
 
 ```bash
-ufw allow from 172.16.0.0/12 to any port 9100 proto tcp
+sudo ufw allow from 10.0.0.13 to any port 9100 proto tcp
 ```
 
-## TLS برای rest-server (توصیه‌شده)
-
-رمز rest-server و داده‌ها (داده‌ها خودشان توسط restic رمز شده‌اند) روی HTTP ساده منتقل می‌شوند. برای TLS با certificate self-signed:
+On vm3, Prometheus runs inside a Docker network and scrapes vm3's own node-exporter through vm3's private IP.
+If ufw is enabled, also allow the Docker networks:
 
 ```bash
-# روی vm3
+sudo ufw allow from 172.16.0.0/12 to any port 9100 proto tcp
+```
+
+## TLS for rest-server (recommended)
+
+Without TLS, the rest-server password travels over plain HTTP. The backup data is still encrypted by restic.
+To use TLS with a self-signed certificate:
+
+```bash
+# on vm3
 cd monitoring-server/rest-server
 openssl req -x509 -newkey rsa:4096 -sha256 -days 3650 -nodes \
   -keyout tls.key -out tls.crt -subj "/CN=vm3" \
@@ -50,8 +66,13 @@ openssl req -x509 -newkey rsa:4096 -sha256 -days 3650 -nodes \
 REST_SERVER_EXTRA_OPTIONS=--tls --tls-cert /etc/rest-server/tls.crt --tls-key /etc/rest-server/tls.key
 ```
 
-روی vm1/vm2: فایل `tls.crt` را در `agent/backup/rest-server.crt` کپی کنید، در `agent/compose.yaml` به backup-runner اضافه کنید
-(`- ./backup/rest-server.crt:/etc/backup/rest-server.crt:ro`) و در `agent/.env`:
+Then restart rest-server: `docker compose up -d rest-server`.
+
+On vm1 and vm2:
+1. Copy `tls.crt` to `agent/backup/rest-server.crt`.
+2. Mount it into backup-runner in `agent/compose.yaml`:
+   `- ./backup/rest-server.crt:/etc/backup/rest-server.crt:ro`
+3. Update `agent/.env`:
 
 ```
 RESTIC_REPOSITORY=rest:https://vm1:...@10.0.0.13:8000/vm1/

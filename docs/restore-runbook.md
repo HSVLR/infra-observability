@@ -1,61 +1,61 @@
-# Runbook بازیابی (Restore)
+# Restore runbook
 
-ترتیب بازیابی در زمان خرابی، مطابق سند بکاپ:
+Order of recovery after a failure, as defined in the backup design document:
 
-1. ساخت VM جدید و نصب Docker
-2. clone این مخزن، `scripts/prepare-host.sh` و ساخت `agent/.env` با **همان** `RESTIC_REPOSITORY` و `RESTIC_PASSWORD`
-3. restore فایل‌ها (compose، config، certificate)
-4. بالا آوردن کانتینرهای دیتابیس با نسخه‌ی سازگار (خالی)
-5. restore PostgreSQL و MongoDB
-6. Redis: فقط cache است؛ کانتینر خالی بالا بیاید کافی است
-7. restore MinIO و policyها
-8. بالا آوردن applicationها و بررسی login / خواندن / نوشتن / داده‌های مهم
-9. `docker compose up -d` در `agent/` تا jobهای بکاپ دوباره فعال شوند
+1. Create a new VM and install Docker.
+2. Clone this repository, run `scripts/prepare-host.sh` and create `agent/.env` with the **same** `RESTIC_REPOSITORY` and `RESTIC_PASSWORD` as before.
+3. Restore files (compose files, configs, certificates).
+4. Start empty database containers with compatible versions.
+5. Restore PostgreSQL and MongoDB.
+6. Redis is a cache only, so starting an empty container is enough.
+7. Restore MinIO and its policies.
+8. Start the applications and verify login, reads, writes and important data.
+9. Run `docker compose up -d` in `agent/` so that the backup jobs are active again.
 
-همه‌ی دستورهای زیر روی VM مقصد و داخل پوشه‌ی `agent/` اجرا می‌شوند. `R` کوتاه‌شده‌ی اجرای restic در ایمیج backup-runner است:
+All commands below run on the target VM, inside `agent/`. `R` is shorthand for running restic in the backup-runner image:
 
 ```bash
 cd agent
 docker compose build backup-runner
 R() { docker compose run --rm -T backup-runner restic "$@"; }
 
-R snapshots                       # همه
-R snapshots --tag postgres        # فقط postgres
+R snapshots                       # all snapshots
+R snapshots --tag postgres        # postgres only
 R ls latest --path /postgres-postgres-app.dump
 ```
 
-> اگر VM اصلی از دست رفته و اسم host جدید فرق دارد، فیلترها را با `--host vm1` بزنید.
+> If the original VM is lost and the new host has a different name, add `--host vm1` to the filters.
 
-## فایل‌ها
+## Files
 
 ```bash
 docker compose run --rm -v /:/restore backup-runner \
   restic restore latest --tag files --target /restore/tmp/files-restore
-# فایل‌ها در /tmp/files-restore/source/files/... روی host هستند؛ بررسی و کپی کنید.
+# The files are in /tmp/files-restore/source/files/... on the host. Review them, then copy them into place.
 ```
 
 ## PostgreSQL
 
-نام فایل‌ها: `postgres-<container>-globals.sql` و `postgres-<container>-<db>.dump`.
+File names are `postgres-<container>-globals.sql` and `postgres-<container>-<db>.dump`.
 
 ```bash
-C=postgres            # نام کانتینر postgres جدید
+C=postgres            # name of the new postgres container
 DB=app
 
-# ۱. roleها و tablespaceها
+# 1. roles and tablespaces
 R dump --path /postgres-$C-globals.sql latest /postgres-$C-globals.sql \
   | docker exec -i $C psql -U postgres -d postgres
 
-# ۲. هر دیتابیس
+# 2. each database
 docker exec $C createdb -U postgres $DB
 R dump --path /postgres-$C-$DB.dump latest /postgres-$C-$DB.dump \
   | docker exec -i $C pg_restore -U postgres -d $DB --exit-on-error
 
-# بررسی
+# check
 docker exec $C psql -U postgres -d $DB -c '\dt'
 ```
 
-برای برگشت به یک روز مشخص به‌جای `latest` شناسه‌ی snapshot را از `R snapshots --tag db:$DB` بردارید.
+To go back to a specific day, use a snapshot ID from `R snapshots --tag db:$DB` instead of `latest`.
 
 ## MongoDB
 
@@ -64,29 +64,29 @@ C=mongo
 R dump --path /mongodb-$C.archive latest /mongodb-$C.archive \
   | docker exec -i $C sh -c 'mongorestore --archive --drop \
       -u "$MONGO_INITDB_ROOT_USERNAME" -p "$MONGO_INITDB_ROOT_PASSWORD" --authenticationDatabase admin'
-# اگر MONGO_OPLOG=true بوده: --oplogReplay هم اضافه کنید.
+# If MONGO_OPLOG=true was used, add --oplogReplay.
 ```
 
 ## MinIO
 
 ```bash
-# ۱. بازگرداندن mirror به staging روی host
+# 1. restore the mirror to a staging directory on the host
 docker compose run --rm -v /:/restore backup-runner \
   restic restore latest --tag minio --target /restore/tmp/minio-restore
 
-# ۲. آپلود به MinIO جدید
+# 2. upload into the new MinIO
 docker run --rm --network host -v /tmp/minio-restore/staging/minio:/m minio/mc sh -c '
   mc alias set dst http://127.0.0.1:9000 ACCESS SECRET &&
   for b in /m/data/*; do mc mb -p dst/$(basename $b) && mc mirror $b dst/$(basename $b); done'
 
-# ۳. متادیتا و IAM (فایل‌های zip در /m/meta)
+# 3. bucket metadata and IAM (zip files in /m/meta)
 #   mc admin cluster bucket import dst /m/meta/<...>-bucket-metadata.zip
 #   mc admin cluster iam import   dst /m/meta/<...>-iam-info.zip
 ```
 
-## مستقیم روی vm3
+## Directly on vm3
 
-اگر VMها در دسترس نیستند، repoها روی دیسک vm3 هستند و کانتینر `backup-maintenance` به همه دسترسی دارد:
+If vm1 or vm2 is unreachable, the repositories are still on vm3's disk. The `backup-maintenance` container can read all of them:
 
 ```bash
 cd monitoring-server
@@ -94,6 +94,6 @@ docker compose exec backup-maintenance sh -c \
   'restic -r /repos/vm1 --password-file /secrets/vm1.pass snapshots'
 ```
 
-## کلیدها
+## Keys
 
-بدون `RESTIC_PASSWORD` هر repo، بکاپ‌ها **قابل رمزگشایی نیستند**. یک نسخه باید خارج از vm1/vm2/vm3 (password manager یا جای امن آفلاین) باشد.
+Without a repository's `RESTIC_PASSWORD`, its backups **cannot be decrypted**. Keep a copy outside vm1, vm2 and vm3, in a password manager or a safe offline place.

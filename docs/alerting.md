@@ -1,27 +1,27 @@
 # Alerting
 
-همه‌چیز در `monitoring-server/grafana/provisioning/alerting/` تعریف شده و Grafana هنگام start آن را بارگذاری می‌کند:
+Everything is defined in `monitoring-server/grafana/provisioning/alerting/`. Grafana loads it on startup:
 
-| فایل | محتوا |
+| File | Content |
 |---|---|
-| `rules.yaml` | قوانین Alert (گروه‌های vm، containers، backups) |
-| `contact-points.yaml` | کانال ارسال (Telegram) |
-| `notification-policies.yaml` | مسیریابی، گروه‌بندی و فاصله‌ی تکرار |
+| `rules.yaml` | alert rules (groups `vm`, `containers`, `backups`) |
+| `contact-points.yaml` | notification channel (Telegram) |
+| `notification-policies.yaml` | routing, grouping and repeat intervals |
 
-قوانین provision‌شده در UI قابل ویرایش نیستند؛ تغییرات را در همین فایل‌ها بدهید و `docker compose restart grafana` کنید.
+Provisioned rules cannot be edited in the Grafana UI. Change these files instead, then run `docker compose restart grafana`.
 
 ## Telegram
 
-1. با `@BotFather` یک bot بسازید و token را در `TELEGRAM_BOT_TOKEN` بگذارید.
-2. bot را به گروه موردنظر اضافه کنید، یک پیام بفرستید و chat id را از
-   `https://api.telegram.org/bot<TOKEN>/getUpdates` بردارید (برای گروه‌ها منفی است) ← `TELEGRAM_CHAT_ID`.
-3. در Grafana → Alerting → Contact points → telegram → **Test**.
+1. Create a bot with `@BotFather` and put its token in `TELEGRAM_BOT_TOKEN`.
+2. Add the bot to the target group and send a message there. Then get the chat id from
+   `https://api.telegram.org/bot<TOKEN>/getUpdates` and put it in `TELEGRAM_CHAT_ID`. Group ids are negative.
+3. In Grafana, open Alerting → Contact points → telegram and click **Test**.
 
-> اگر vm3 به api.telegram.org دسترسی ندارد، یک receiver دیگر اضافه کنید.
+> If vm3 cannot reach `api.telegram.org`, add another receiver (see below).
 
-## کانال‌های دیگر
+## Other channels
 
-به `contact-points.yaml` یک receiver دیگر اضافه کنید، مثلاً:
+Add another receiver to `contact-points.yaml`. For example, email:
 
 ```yaml
       - uid: email-main
@@ -30,7 +30,9 @@
           addresses: ops@example.com
 ```
 
-(برای email تنظیمات SMTP را با متغیرهای `GF_SMTP_*` در compose بدهید.)
+Email also needs SMTP settings, given as `GF_SMTP_*` environment variables in the grafana service.
+
+Or a webhook:
 
 ```yaml
       - uid: webhook-main
@@ -39,12 +41,12 @@
           url: ${ALERT_WEBHOOK_URL}
 ```
 
-## کانال جدا برای Warning و Critical
+## Separate channels for warning and critical
 
-یک contact point دوم بسازید (مثلاً `telegram-critical` با chat id دیگر) و در `notification-policies.yaml`
-`receiver` مسیر `severity = critical` را به آن تغییر دهید.
+Create a second contact point, for example `telegram-critical` with another chat id.
+Then, in `notification-policies.yaml`, change the `receiver` of the `severity = critical` route to it.
 
-## نکته درباره‌ی `$`
+## Note about `$`
 
-Grafana در فایل‌های provisioning عبارت‌های `$VAR` را با متغیرهای محیطی جایگزین می‌کند؛
-برای همین در templateها به‌جای `$labels` از `.Labels` استفاده شده است (`{{ index .Labels "host" }}`).
+Grafana replaces `$VAR` expressions in provisioning files with environment variables.
+For this reason the templates use `.Labels` instead of `$labels`, for example `{{ index .Labels "host" }}`.

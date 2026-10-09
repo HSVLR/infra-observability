@@ -21,7 +21,7 @@ RUN apk add --no-cache bash coreutils curl docker-cli flock jq tzdata \
  && curl -fsSL -o /usr/local/bin/supercronic \
       "https://github.com/aptible/supercronic/releases/download/${SUPERCRONIC_VERSION}/supercronic-linux-${arch}" \
  && chmod +x /usr/local/bin/supercronic \
- && supercronic -test /dev/null
+ && /usr/local/bin/supercronic -test /dev/null
 
 COPY --from=rclone /usr/local/bin/rclone /usr/local/bin/rclone
 COPY lib/ /usr/local/lib/backup/
@@ -32,4 +32,6 @@ ENV RESTIC_CACHE_DIR=/cache \
     METRICS_DIR=/textfile
 
 ENTRYPOINT []
-CMD ["supercronic", "-passthrough-logs", "/etc/backup/crontab"]
+# Absolute path: as PID 1 supercronic re-executes itself (zombie reaping)
+# via argv[0], which fails for a bare name.
+CMD ["/usr/local/bin/supercronic", "-passthrough-logs", "/etc/backup/crontab"]

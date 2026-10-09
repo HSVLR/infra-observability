@@ -39,13 +39,14 @@ The monitoring design document raises this risk in its note about a full VM outa
 |---|---|---|---|
 | PostgreSQL | `pg_dumpall --globals-only` (roles) + `pg_dump -Fc` per database | daily 01:00 | 30 daily, 8 weekly, 6 monthly |
 | MongoDB | `mongodump --archive` (+ `--oplog` on a replica set) | daily 01:20 | same |
-| MinIO | `mc mirror` to a local staging dir + bucket metadata and IAM export | daily 01:40 | same |
+| MinIO | `rclone sync` of every bucket to a local staging dir, then restic | daily 01:40 | same |
 | Files | compose files, configs, certificates from `FILES_SOURCE_HOST_DIR` | daily 03:00 | same |
 | Redis | **not backed up**, cache only | — | — |
 
 - Dumps run inside the database container itself (`docker exec`). The `pg_dump` / `mongodump` version therefore always matches the server, and no database credentials are stored in this project.
 - Dumps are streamed straight into restic, with no temporary files on disk. Restic handles encryption, compression, deduplication and checksums.
 - rest-server runs in **append-only** and **private-repos** mode. vm1 can only access `/vm1/` and cannot delete snapshots, so a compromised VM cannot destroy its own backups. Retention and pruning happen only on vm3.
+- MinIO is read over the S3 API with rclone (MinIO's own `mc` client is no longer distributed). Only the latest version of each object is backed up. MinIO users and bucket policies are not included; keep them in your compose files or notes.
 - Every job exports its result as metrics (`backup_last_status`, `backup_last_success_timestamp_seconds`, duration, bytes added). Alerts fire for failed jobs and for stale backups.
 - Once a month, `restore-test` restores the latest dumps into temporary containers and checks them. A backup whose restore has never been tested cannot be trusted.
 
@@ -86,7 +87,7 @@ monitoring-server/         vm3 only
   maintenance/crontab      prune / check / stats / restore-test
   rest-server/htpasswd     (generated, not in git)
   restic/passwords/        repository keys for vm3 (not in git)
-images/backup-runner/      shared image: restic + docker-cli + mc + supercronic, and the jobs
+images/backup-runner/      shared image: restic + docker-cli + rclone + supercronic, and the jobs
 scripts/                   prepare-host.sh, add-restic-user.sh
 docs/                      setup guide, restore runbook, firewall, alerting
 ```
@@ -190,7 +191,7 @@ Disaster recovery: [docs/restore-runbook.md](docs/restore-runbook.md)
 ## Next steps (out of phase 1)
 
 - External monitoring of **vm3 itself**, for example a simple health check from an outside service or another VM against Grafana. If vm3 goes down, no alerts are sent at all.
-- A second copy of the backups outside vm3 (`restic copy` or rsync to another S3/MinIO). Today a vm3 disk failure loses every backup.
+- A second copy of the backups outside vm3 (`restic copy` or rsync to another server or S3 storage). Today a vm3 disk failure loses every backup.
 - TLS for rest-server (guide in docs/firewall.md).
 - PITR for PostgreSQL (WAL archiving, e.g. pgBackRest or WAL-G).
 - postgres_exporter / mongodb_exporter, Loki for logs, Alertmanager, SSL certificate monitoring.

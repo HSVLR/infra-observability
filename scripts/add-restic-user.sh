@@ -33,7 +33,8 @@ cat <<MSG
 User '$name' created. Restart rest-server to be sure it is picked up:
   (cd monitoring-server && docker compose restart rest-server)
 
-Put these lines into agent/.env on $name:
+On $name (not here), put these two lines into /opt/infra-observability/agent/.env,
+replacing the RESTIC_REPOSITORY= and RESTIC_PASSWORD= placeholders. See docs/setup-vm3.md step 7.
 
 RESTIC_REPOSITORY=rest:http://$name:$http_pass@$vm3_ip:8000/$name/
 RESTIC_PASSWORD=$repo_pass

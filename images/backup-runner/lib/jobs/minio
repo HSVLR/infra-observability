@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
-# MinIO backup: mirror buckets into a local staging directory (incremental),
-# export bucket metadata + IAM, then snapshot the staging directory with restic.
-# Only the latest version of each object is backed up.
+# MinIO backup: sync every bucket into a local staging directory with rclone
+# (S3 API, incremental: only changed objects are downloaded), then snapshot
+# the staging directory with restic. Only the latest version of each object
+# is backed up. Users and bucket policies are not part of the S3 API data and
+# must be kept separately (see README).
 #
 # env: MINIO_URL MINIO_ACCESS_KEY MINIO_SECRET_KEY (required), MINIO_BUCKETS
 set -Eeuo pipefail
@@ -10,29 +12,27 @@ source /usr/local/lib/backup/common.sh
 if [[ ${1:-} == --enabled ]]; then [[ -n ${MINIO_URL:-} ]]; exit; fi
 require_env MINIO_ACCESS_KEY MINIO_SECRET_KEY
 
+# rclone remote "minio:" configured entirely from the environment.
+export RCLONE_CONFIG=/tmp/rclone.conf
+export RCLONE_CONFIG_MINIO_TYPE=s3
+export RCLONE_CONFIG_MINIO_PROVIDER=Minio
+export RCLONE_CONFIG_MINIO_ENDPOINT=$MINIO_URL
+export RCLONE_CONFIG_MINIO_ACCESS_KEY_ID=$MINIO_ACCESS_KEY
+export RCLONE_CONFIG_MINIO_SECRET_ACCESS_KEY=$MINIO_SECRET_KEY
+touch "$RCLONE_CONFIG"
+
 stage=/staging/minio
-export MC_CONFIG_DIR=/tmp/mc
-mc alias set src "$MINIO_URL" "$MINIO_ACCESS_KEY" "$MINIO_SECRET_KEY" >/dev/null
 
 if [[ -n ${MINIO_BUCKETS:-} ]]; then
   buckets=$(words "$MINIO_BUCKETS")
 else
-  buckets=$(mc ls --json src | jq -r '.key | rtrimstr("/")')
+  buckets=$(rclone lsf --dirs-only minio: | sed 's#/$##')
 fi
+[[ -n $buckets ]] || die "no buckets found on $MINIO_URL"
 
-mkdir -p "$stage/data" "$stage/meta"
 for b in $buckets; do
-  log "mirror bucket $b"
-  mc mirror --quiet --overwrite --remove "src/$b" "$stage/data/$b"
-  mc anonymous get-json "src/$b" > "$stage/meta/$b.anonymous-policy.json" 2>/dev/null || true
-  mc version info --json "src/$b" > "$stage/meta/$b.versioning.json" 2>/dev/null || true
+  log "sync bucket $b"
+  rclone sync "minio:$b" "$stage/$b" --transfers 8 --stats 0
 done
-
-# Bucket metadata (policies, lifecycle, versioning...) and IAM (users, groups,
-# policies). Needs admin credentials; a warning only, data is what matters most.
-(cd "$stage/meta" && mc admin cluster bucket export src >/dev/null) \
-  || log "WARN: could not export bucket metadata (admin credentials needed)"
-(cd "$stage/meta" && mc admin cluster iam export src >/dev/null) \
-  || log "WARN: could not export IAM (admin credentials needed)"
 
 restic_paths minio "$stage"

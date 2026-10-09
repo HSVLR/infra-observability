@@ -4,7 +4,7 @@ This guide brings up the whole server side on vm3, step by step:
 Prometheus, Grafana with alerting, the blackbox exporter, the restic rest-server and the backup maintenance jobs.
 It also runs the agent stack on vm3 so that vm3 monitors itself.
 
-When you finish, vm3 is ready and waiting for vm1 and vm2. Connecting them is covered in step 12.
+When you finish, vm3 is ready and waiting for vm1 and vm2. Connecting them is covered in step 13.
 
 Throughout this guide:
 
@@ -153,28 +153,49 @@ You can leave it at the example value now and correct it once you know the conta
 
 ## 7. Create restic credentials for vm1 and vm2
 
-Run this once per VM that will send backups to vm3:
+Each application VM (vm1, vm2) gets its own **backup repository** on vm3: a folder under `/srv/restic`.
+To write into it, the VM needs two secrets, which this step creates on vm3:
+
+| Secret | What it is for |
+|---|---|
+| HTTP user + password | logs in to rest-server on vm3. User `vm1` can only reach the folder `/srv/restic/vm1` |
+| repository key (`RESTIC_PASSWORD`) | encrypts the backups. Without it, nobody can read them, including you |
+
+Run this on vm3, once per VM. The first argument is the VM's name, the second is vm3's IP:
 
 ```bash
 scripts/add-restic-user.sh vm1 77.42.20.237
 scripts/add-restic-user.sh vm2 77.42.20.237
 ```
 
-Each run does three things:
-- adds a user to `monitoring-server/rest-server/htpasswd`; that user can only reach its own repository `/<name>/`
-- writes the repository encryption key to `monitoring-server/restic/passwords/<name>.pass`, which vm3 needs for prune/check/restore-test
-- prints two lines for that VM's `agent/.env`:
+Each run prints two lines like these:
 
 ```
 RESTIC_REPOSITORY=rest:http://vm1:<http-password>@77.42.20.237:8000/vm1/
 RESTIC_PASSWORD=<repository-key>
 ```
 
-Then:
-1. Save both outputs somewhere safe. You need them in step 12.
-2. **Store every `RESTIC_PASSWORD` outside vm1/vm2/vm3**, for example in a password manager. If vm3 dies together with this key, the backups cannot be decrypted.
+**What to do with the two printed lines.** Copy them now; you need them in step 13.
+They are not used on vm3. They belong in the file `/opt/infra-observability/agent/.env` **on vm1** (and the vm2 lines in that file on vm2).
+That file is created in step 13 from `agent/.env.example`. It already contains `RESTIC_REPOSITORY=` and `RESTIC_PASSWORD=`
+with placeholder values; replace those two lines with the printed ones. The backup runner on that VM reads them from there.
 
-> The repository name must equal the `HOST_NAME` that the VM will use in its `agent/.env`. The restore test relies on this.
+**About the name (`vm1`, `vm2`).** Use the same name in three places:
+
+1. the first argument of `add-restic-user.sh` (here: `vm1`)
+2. `HOST_NAME=vm1` in vm1's `agent/.env` (step 13)
+3. `vm1/...` entries in `RESTORE_TESTS` in vm3's `monitoring-server/.env` (step 6)
+
+The default values already follow this, so if you keep the names `vm1` and `vm2` everywhere, there is nothing to do.
+The names matter because vm3 finds a VM's backups by this name. With a mismatch, the restore test and the Backups dashboard look in the wrong place.
+
+**Keep the repository key safe.** Store each `RESTIC_PASSWORD` outside vm1/vm2/vm3, for example in a password manager.
+vm3 also keeps a copy in `monitoring-server/restic/passwords/<name>.pass`, but if vm3's disk dies, that copy dies with the backups.
+
+> Lost the printed lines? The key can be read back on vm3 with `cat monitoring-server/restic/passwords/vm1.pass`.
+> The HTTP password cannot be recovered. Delete the `vm1:` line from `monitoring-server/rest-server/htpasswd`
+> and the file `monitoring-server/restic/passwords/vm1.pass`, then run the script again. Only do this before
+> vm1 has made its first backup; afterwards, a new key cannot open the existing repository.
 
 ## 8. (Optional) Enable TLS on rest-server
 
@@ -189,7 +210,7 @@ docker compose up -d --build
 docker compose ps
 ```
 
-The first run builds the `backup-runner` image (restic, docker CLI, MinIO client, supercronic), which takes a minute or two.
+The first run builds the `backup-runner` image (restic, docker CLI, rclone, supercronic), which takes a minute or two.
 All five services should be `running`:
 
 ```

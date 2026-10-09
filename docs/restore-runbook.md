@@ -8,7 +8,7 @@ Order of recovery after a failure, as defined in the backup design document:
 4. Start empty database containers with compatible versions.
 5. Restore PostgreSQL and MongoDB.
 6. Redis is a cache only, so starting an empty container is enough.
-7. Restore MinIO and its policies.
+7. Restore MinIO objects, then recreate its users and bucket policies.
 8. Start the applications and verify login, reads, writes and important data.
 9. Run `docker compose up -d` in `agent/` so that the backup jobs are active again.
 
@@ -69,20 +69,26 @@ R dump --path /mongodb-$C.archive latest /mongodb-$C.archive \
 
 ## MinIO
 
+The snapshot contains one folder per bucket under `/staging/minio/`. Users and bucket policies are not in the
+backup; recreate them from your notes or compose files.
+
 ```bash
-# 1. restore the mirror to a staging directory on the host
+# 1. restore the buckets to a folder on the host
 docker compose run --rm -v /:/restore backup-runner \
   restic restore latest --tag minio --target /restore/tmp/minio-restore
 
-# 2. upload into the new MinIO
-docker run --rm --network host -v /tmp/minio-restore/staging/minio:/m minio/mc sh -c '
-  mc alias set dst http://127.0.0.1:9000 ACCESS SECRET &&
-  for b in /m/data/*; do mc mb -p dst/$(basename $b) && mc mirror $b dst/$(basename $b); done'
-
-# 3. bucket metadata and IAM (zip files in /m/meta)
-#   mc admin cluster bucket import dst /m/meta/<...>-bucket-metadata.zip
-#   mc admin cluster iam import   dst /m/meta/<...>-iam-info.zip
+# 2. upload them into the new MinIO (each folder becomes a bucket)
+docker compose run --rm -v /tmp/minio-restore/staging/minio:/restore:ro \
+  -e RCLONE_CONFIG_MINIO_TYPE=s3 -e RCLONE_CONFIG_MINIO_PROVIDER=Minio \
+  -e RCLONE_CONFIG_MINIO_ENDPOINT=http://host.docker.internal:9000 \
+  -e RCLONE_CONFIG_MINIO_ACCESS_KEY_ID=<access-key> \
+  -e RCLONE_CONFIG_MINIO_SECRET_ACCESS_KEY=<secret-key> \
+  backup-runner sh -c 'for b in /restore/*/; do b=$(basename "$b"); rclone copy "/restore/$b" "minio:$b"; done'
 ```
+
+> The MinIO server image is no longer published on Docker Hub. Keep a copy of the image you run today, so
+> that you can start MinIO again on a new VM: `docker save <minio-image> | gzip > minio-image.tar.gz`
+> (and store the file outside the VM, or include its folder in `FILES_SOURCE_HOST_DIR`).
 
 ## Directly on vm3
 

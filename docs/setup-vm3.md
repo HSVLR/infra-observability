@@ -435,6 +435,9 @@ cd ../agent && docker compose up -d --build              # every VM
 | Symptom | Likely cause and fix |
 |---|---|
 | `grafana` exits with `set GRAFANA_ADMIN_PASSWORD` | `.env` missing or the variable is empty |
+| `grafana` exits with `could not find Bot Token in settings` | an old version of `compose.yaml`; pull the latest version. Grafana now starts without Telegram, but alerts are only delivered after `TELEGRAM_BOT_TOKEN` and `TELEGRAM_CHAT_ID` are set |
+| `backup-maintenance` / `backup-runner` loop with `exec format error` | the image was built with a binary for another CPU architecture (amd64 vs ARM). Pull the latest version and rebuild with `docker compose build --no-cache` |
+| Grafana logs `open /etc/grafana/provisioning/plugins: no such file or directory` | harmless; the folder now exists in the repository |
 | `rest-server` restarts and logs about the htpasswd file | `monitoring-server/rest-server/htpasswd` does not exist. Run `scripts/prepare-host.sh --server` |
 | restic: `401 Unauthorized` | wrong user or password in `RESTIC_REPOSITORY`, or rest-server was not restarted after `add-restic-user.sh` |
 | restic: `403 Forbidden` on `/vm1/` | the URL path does not start with the user name (private repos) |

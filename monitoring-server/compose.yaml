@@ -43,9 +43,11 @@ services:
       GF_ANALYTICS_REPORTING_ENABLED: "false"
       GF_ANALYTICS_CHECK_FOR_UPDATES: "false"
       GF_DATE_FORMATS_DEFAULT_TIMEZONE: ${TZ:-browser}
-      # used by provisioning/alerting/contact-points.yaml
-      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
-      TELEGRAM_CHAT_ID: ${TELEGRAM_CHAT_ID:-}
+      # used by provisioning/alerting/contact-points.yaml. Grafana refuses to
+      # start with an empty token, so a placeholder is used until it is set;
+      # alerts are not delivered until the real values are in .env.
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-not-configured}
+      TELEGRAM_CHAT_ID: ${TELEGRAM_CHAT_ID:-not-configured}
     ports:
       - "${GRAFANA_BIND:-0.0.0.0}:3000:3000"
     restart: unless-stopped

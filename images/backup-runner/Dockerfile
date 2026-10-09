@@ -9,12 +9,19 @@ FROM rclone/rclone:${RCLONE_VERSION} AS rclone
 FROM restic/restic:${RESTIC_VERSION}
 
 ARG SUPERCRONIC_VERSION=v0.2.33
-ARG TARGETARCH=amd64
 
+# The architecture is taken from the image itself (x86_64 or aarch64), so the
+# build works on both amd64 and ARM VMs.
 RUN apk add --no-cache bash coreutils curl docker-cli flock jq tzdata \
+ && case "$(apk --print-arch)" in \
+      x86_64)  arch=amd64 ;; \
+      aarch64) arch=arm64 ;; \
+      *) echo "unsupported architecture $(apk --print-arch)" >&2; exit 1 ;; \
+    esac \
  && curl -fsSL -o /usr/local/bin/supercronic \
-      "https://github.com/aptible/supercronic/releases/download/${SUPERCRONIC_VERSION}/supercronic-linux-${TARGETARCH}" \
- && chmod +x /usr/local/bin/supercronic
+      "https://github.com/aptible/supercronic/releases/download/${SUPERCRONIC_VERSION}/supercronic-linux-${arch}" \
+ && chmod +x /usr/local/bin/supercronic \
+ && supercronic -test /dev/null
 
 COPY --from=rclone /usr/local/bin/rclone /usr/local/bin/rclone
 COPY lib/ /usr/local/lib/backup/

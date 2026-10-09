@@ -363,8 +363,20 @@ vim agent/.env
 | `RESTIC_REPOSITORY`, `RESTIC_PASSWORD` | output of step 7 for this VM |
 | `PG_CONTAINERS` | postgres container names on this VM, or empty |
 | `MONGO_CONTAINERS`, `MONGO_OPLOG` | mongo container names, or empty |
+| `MONGO_USER`, `MONGO_PASSWORD`, `MONGO_AUTH_DB` | a MongoDB user for backups (see below); empty = the container's `MONGO_INITDB_ROOT_*` |
 | `MINIO_URL`, `MINIO_ACCESS_KEY`, `MINIO_SECRET_KEY` | e.g. `http://host.docker.internal:9000`, or empty |
 | `FILES_SOURCE_HOST_DIR` | the directory with compose files and configs, e.g. `/opt` |
+
+**MongoDB backup user (recommended).** Create a user that can only read for backups, logged in as an existing admin user:
+
+```bash
+docker exec -it <mongo-container> mongosh -u <admin-user> -p --authenticationDatabase admin --eval '
+  db.getSiblingDB("admin").createUser({ user: "backup", pwd: passwordPrompt(), roles: ["backup"] })'
+```
+
+Then set `MONGO_USER=backup`, `MONGO_PASSWORD=<that password>` and `MONGO_AUTH_DB=admin` in `agent/.env`.
+Without these, the job uses the container's `MONGO_INITDB_ROOT_USERNAME/PASSWORD`, which fails with
+`AuthenticationFailed` if the password was changed after the database was first created.
 
 Then start the stack and run the first backups:
 
@@ -435,6 +447,7 @@ cd ../agent && docker compose up -d --build              # every VM
 | Symptom | Likely cause and fix |
 |---|---|
 | `grafana` exits with `set GRAFANA_ADMIN_PASSWORD` | `.env` missing or the variable is empty |
+| mongodb job: `AuthenticationFailed` | the container's `MONGO_INITDB_ROOT_*` values do not match the database. Set `MONGO_USER` / `MONGO_PASSWORD` (step 13) |
 | `grafana` exits with `could not find Bot Token in settings` | an old version of `compose.yaml`; pull the latest version. Grafana now starts without Telegram, but alerts are only delivered after `TELEGRAM_BOT_TOKEN` and `TELEGRAM_CHAT_ID` are set |
 | `backup-maintenance` / `backup-runner` loop with `exec format error` | the image was built with a binary for another CPU architecture (amd64 vs ARM). Pull the latest version and rebuild with `docker compose build --no-cache` |
 | Grafana logs `open /etc/grafana/provisioning/plugins: no such file or directory` | harmless; the folder now exists in the repository |

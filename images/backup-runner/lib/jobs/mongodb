@@ -1,27 +1,36 @@
 #!/usr/bin/env bash
 # MongoDB backup: mongodump --archive (optionally --oplog for a consistent
 # point-in-time dump on replica sets), run inside the mongo container and
-# streamed into restic. Credentials come from the container's
-# MONGO_INITDB_ROOT_USERNAME / MONGO_INITDB_ROOT_PASSWORD.
+# streamed into restic.
 #
-# env: MONGO_CONTAINERS (required), MONGO_OPLOG, MONGO_DUMP_EXTRA_ARGS
+# Credentials: MONGO_USER / MONGO_PASSWORD / MONGO_AUTH_DB from .env if set,
+# otherwise the container's MONGO_INITDB_ROOT_USERNAME / _PASSWORD.
+#
+# env: MONGO_CONTAINERS (required), MONGO_USER, MONGO_PASSWORD, MONGO_AUTH_DB,
+#      MONGO_OPLOG, MONGO_DUMP_EXTRA_ARGS
 set -Eeuo pipefail
 source /usr/local/lib/backup/common.sh
 
 if [[ ${1:-} == --enabled ]]; then [[ -n ${MONGO_CONTAINERS:-} ]]; exit; fi
 
-args=(--archive --quiet)
+# no --quiet: on failure, mongodump's own error message must reach the log
+args=(--archive)
 [[ ${MONGO_OPLOG:-false} == true ]] && args+=(--oplog)
 read -r -a extra <<<"${MONGO_DUMP_EXTRA_ARGS:-}"
 args+=("${extra[@]}")
 
+# Passed by name (-e VAR), so the values never appear on a command line.
+export BACKUP_MONGO_USER=${MONGO_USER:-} BACKUP_MONGO_PASSWORD=${MONGO_PASSWORD:-}
+export BACKUP_MONGO_AUTH_DB=${MONGO_AUTH_DB:-admin}
+
 for container in $(words "$MONGO_CONTAINERS"); do
   # -gzip is intentionally not used: restic compresses and deduplicates.
   restic_stdin "mongodb-$container.archive" mongodb "container:$container" -- \
-    docker exec "$container" sh -c '
-      if [ -n "${MONGO_INITDB_ROOT_USERNAME:-}" ]; then
-        set -- -u "$MONGO_INITDB_ROOT_USERNAME" -p "$MONGO_INITDB_ROOT_PASSWORD" \
-               --authenticationDatabase admin "$@"
+    docker exec -e BACKUP_MONGO_USER -e BACKUP_MONGO_PASSWORD -e BACKUP_MONGO_AUTH_DB "$container" sh -c '
+      user=${BACKUP_MONGO_USER:-${MONGO_INITDB_ROOT_USERNAME:-}}
+      pass=${BACKUP_MONGO_PASSWORD:-${MONGO_INITDB_ROOT_PASSWORD:-}}
+      if [ -n "$user" ]; then
+        set -- -u "$user" -p "$pass" --authenticationDatabase "$BACKUP_MONGO_AUTH_DB" "$@"
       fi
       exec mongodump "$@"' _ "${args[@]}"
 done
